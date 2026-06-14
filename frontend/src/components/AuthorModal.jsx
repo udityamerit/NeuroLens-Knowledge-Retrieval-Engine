@@ -6,7 +6,7 @@ export default function AuthorModal({ isOpen, onClose }) {
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div
-        className="glass-panel animate-slide-up"
+        className="glass-panel animate-slide-up author-modal"
         style={styles.modal}
         onClick={(e) => e.stopPropagation()}
       >

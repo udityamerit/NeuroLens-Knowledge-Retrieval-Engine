@@ -50,7 +50,9 @@ body {
   background-attachment: fixed;
   font-family: var(--font-sans);
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
+  width: 100dvw;
 }
 
 #root {
@@ -223,6 +225,13 @@ body {
   box-shadow: 0 0 8px rgba(157, 78, 221, 0.15);
 }
 
+/* Author Modal responsive scrollability */
+.author-modal {
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
 /* Responsiveness Utilities */
 .sidebar-wrapper {
   display: flex;
@@ -316,6 +325,11 @@ body {
   .responsive-input {
     font-size: 13px !important;
     padding: 10px 12px !important;
+  }
+  .author-modal {
+    padding: 24px 16px 20px 16px !important;
+    max-width: 90% !important;
+    border-radius: 18px !important;
   }
 }
 
