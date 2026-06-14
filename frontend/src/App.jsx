@@ -357,11 +357,11 @@ export default function App() {
       let resolvedKey = settings.apiKey;
       if (!resolvedKey) {
         if (settings.provider === 'groq') {
-          resolvedKey = import.meta.env.VITE_GROQ_API_KEY || '';
+          resolvedKey = import.meta.env.VITE_GROQ_API_KEY || (typeof __GROQ_API_KEY__ !== 'undefined' ? __GROQ_API_KEY__ : '') || '';
         } else if (settings.provider === 'openai') {
-          resolvedKey = import.meta.env.VITE_OPENAI_API_KEY || '';
+          resolvedKey = import.meta.env.VITE_OPENAI_API_KEY || (typeof __OPENAI_API_KEY__ !== 'undefined' ? __OPENAI_API_KEY__ : '') || '';
         } else if (settings.provider === 'huggingface') {
-          resolvedKey = import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || '';
+          resolvedKey = import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || (typeof __HF_TOKEN__ !== 'undefined' ? __HF_TOKEN__ : '') || '';
         }
       }
 
