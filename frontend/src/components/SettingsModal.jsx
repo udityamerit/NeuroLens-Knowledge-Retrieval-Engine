@@ -29,6 +29,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
   const [temperature, setTemperature] = useState(settings.temperature || 0.3);
   const [k, setK] = useState(settings.k || 5);
   const [showKey, setShowKey] = useState(false);
+  const [apiBase, setApiBase] = useState(settings.apiBase || 'http://127.0.0.1:8000');
 
   // Load API keys stored in localStorage for convenience
   const [savedKeys, setSavedKeys] = useState({
@@ -55,15 +56,17 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
   };
 
   const handleSave = () => {
-    // Save to local storage for convenience (encrypted if needed, but since it is local development local storage is standard)
+    // Save to local storage for convenience
     localStorage.setItem(`neurolens_key_${provider}`, apiKey);
+    localStorage.setItem('neurolens_api_base', apiBase);
     
     onSave({
       provider,
       apiKey,
       modelName,
       temperature: parseFloat(temperature),
-      k: parseInt(k)
+      k: parseInt(k),
+      apiBase
     });
     onClose();
   };
@@ -94,6 +97,28 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
         {/* Content */}
         <div style={styles.body}>
           
+          {/* Backend API URL */}
+          <div style={styles.formGroup}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={styles.label}>Backend API URL</label>
+              {window.location.protocol === 'https:' && apiBase.startsWith('http:') && (
+                <span style={{ ...styles.infoSpan, color: '#f59e0b', fontWeight: '700' }}>⚠️ Mixed Content Risk</span>
+              )}
+            </div>
+            <input
+              type="text"
+              placeholder="e.g. http://127.0.0.1:8000"
+              value={apiBase}
+              onChange={(e) => setApiBase(e.target.value)}
+              style={styles.input}
+            />
+            {window.location.protocol === 'https:' && apiBase.startsWith('http:') && (
+              <p style={{ ...styles.helperText, color: '#fbbf24', marginTop: '2px' }}>
+                ⚠️ Browsers block insecure HTTP API calls from HTTPS pages. To connect to a local backend, run the frontend locally (e.g. via <code>run.bat</code>) or configure an HTTPS tunnel (e.g. <code>ngrok</code>).
+              </p>
+            )}
+          </div>
+
           {/* Provider Selection */}
           <div style={styles.formGroup}>
             <label style={styles.label}>LLM API Provider</label>
