@@ -363,3 +363,66 @@ body {
   border-color: rgba(239, 68, 68, 0.4) !important;
 }
 
+/* Voice Feature Animations and Button Hover States */
+
+.voice-lang-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.voice-mic-btn:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #ffffff !important;
+}
+
+.voice-mic-btn.listening {
+  background: rgba(0, 245, 212, 0.08) !important;
+  border: 1px solid rgba(0, 245, 212, 0.25) !important;
+  box-shadow: 0 0 12px rgba(0, 245, 212, 0.2);
+}
+
+.speak-btn:hover {
+  color: var(--color-secondary) !important;
+  opacity: 1 !important;
+}
+
+.speak-btn.speaking {
+  color: var(--color-secondary) !important;
+  opacity: 1 !important;
+}
+
+/* Animations for Voice Waves and Mic Pulse */
+@keyframes micPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+    filter: drop-shadow(0 0 4px var(--color-secondary));
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+}
+
+.mic-listening-pulse {
+  animation: micPulse 1.4s infinite ease-in-out;
+}
+
+@keyframes wavePulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.voice-waves {
+  animation: wavePulse 1s infinite ease-in-out;
+}
+

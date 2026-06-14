@@ -396,6 +396,7 @@ export default function App() {
       const systemPrompt = 
         "You are NeuroLens, an advanced AI document analyst. " +
         "Your task is to answer the user's question based strictly on the provided context source blocks. " +
+        "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). " +
         "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. " +
         "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n" +
         `Here is the context retrieved from the documents:\n\n${contextStr}`;

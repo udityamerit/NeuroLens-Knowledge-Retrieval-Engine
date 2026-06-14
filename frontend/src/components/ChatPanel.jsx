@@ -6,6 +6,130 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   const chatEndRef = useRef(null);
   const canvasRef = useRef(null);
 
+  const [isListening, setIsListening] = useState(false);
+  const [speechLang, setSpeechLang] = useState('en-US'); // 'en-US' or 'hi-IN'
+  const [speakingIndex, setSpeakingIndex] = useState(null);
+  const recognitionRef = useRef(null);
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+      
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setQuery(prev => prev ? `${prev} ${transcript}` : transcript);
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        setIsListening(false);
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+      
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  // Sync speech language config
+  useEffect(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.lang = speechLang;
+    }
+  }, [speechLang]);
+
+  // Clean up speaking states on unmount
+  useEffect(() => {
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Speech recognition is not supported in this browser. Try Chrome, Edge, or Safari.");
+      return;
+    }
+    
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        console.error("Failed to start speech recognition:", err);
+      }
+    }
+  };
+
+  const toggleSpeechLanguage = () => {
+    setSpeechLang(prev => prev === 'en-US' ? 'hi-IN' : 'en-US');
+  };
+
+  const toggleSpeak = (text, index) => {
+    if (!window.speechSynthesis) {
+      alert("Speech synthesis (TTS) is not supported in this browser.");
+      return;
+    }
+
+    if (speakingIndex === index) {
+      window.speechSynthesis.cancel();
+      setSpeakingIndex(null);
+    } else {
+      window.speechSynthesis.cancel();
+      
+      let cleanText = text
+        .replace(/📥 \*\*System:\*\*/g, '')
+        .replace(/❌ \*\*Error running query:\*\*/g, '')
+        .replace(/\[Source \d+\]/g, '')
+        .replace(/\*\*|`|\*/g, '')
+        .replace(/###|##|#/g, '')
+        .trim();
+        
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      
+      // Auto-detect Hindi script characters
+      const containsHindi = /[\u0900-\u097F]/.test(cleanText);
+      if (containsHindi) {
+        utterance.lang = 'hi-IN';
+        const voices = window.speechSynthesis.getVoices();
+        const hiVoice = voices.find(voice => voice.lang.includes('hi') || voice.lang.includes('HI'));
+        if (hiVoice) utterance.voice = hiVoice;
+      } else {
+        utterance.lang = 'en-US';
+        const voices = window.speechSynthesis.getVoices();
+        const enVoice = voices.find(voice => voice.lang.includes('en-US') || voice.lang.includes('en_US') || voice.lang.includes('en-GB') || voice.lang.includes('en_GB'));
+        if (enVoice) utterance.voice = enVoice;
+      }
+      
+      utterance.onend = () => {
+        setSpeakingIndex(null);
+      };
+      
+      utterance.onerror = (e) => {
+        console.error("Speech synthesis error:", e);
+        setSpeakingIndex(null);
+      };
+      
+      setSpeakingIndex(index);
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isGenerating]);
@@ -520,47 +644,74 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
                   {msg.role === 'user' ? msg.content : formatMessageText(msg.content)}
                 </div>
 
-                {/* Sources Citation List */}
-                {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
-                  <div style={styles.sourcesWrapper}>
-                    <button 
-                      onClick={() => toggleSources(idx)} 
-                      style={styles.sourcesToggleBtn}
-                    >
-                      <svg 
-                        width="12" 
-                        height="12" 
-                        viewBox="0 0 24 24" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2.5"
-                        style={{
-                          transform: expandedSources[idx] ? 'rotate(180deg)' : 'rotate(0deg)',
-                          transition: 'transform 0.2s',
-                          marginRight: '6px'
-                        }}
+                {/* Assistant Control Actions (Speak & Sources) */}
+                {msg.role === 'assistant' && (
+                  <div style={styles.assistantActionsRow}>
+                    {msg.sources && msg.sources.length > 0 && (
+                      <button 
+                        onClick={() => toggleSources(idx)} 
+                        style={styles.sourcesToggleBtn}
                       >
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                      {expandedSources[idx] ? 'Hide retrieved sources' : `Show retrieved sources (${msg.sources.length})`}
-                    </button>
-
-                    {expandedSources[idx] && (
-                      <div style={styles.sourcesList} className="animate-fade-in">
-                        {msg.sources.map((src, srcIdx) => (
-                          <div key={srcIdx} style={styles.sourceCard}>
-                            <div style={styles.sourceCardHeader}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={styles.sourceBadge}>Source {srcIdx + 1}</span>
-                                <span style={styles.sourceDocName} title={src.source}>{src.source}</span>
-                              </div>
-                              {src.page && <span style={styles.sourcePage}>Page {src.page}</span>}
-                            </div>
-                            <p style={styles.sourceContent}>"{src.content}"</p>
-                          </div>
-                        ))}
-                      </div>
+                        <svg 
+                          width="12" 
+                          height="12" 
+                          viewBox="0 0 24 24" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          strokeWidth="2.5"
+                          style={{
+                            transform: expandedSources[idx] ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.2s',
+                            marginRight: '6px'
+                          }}
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                        {expandedSources[idx] ? 'Hide retrieved sources' : `Show retrieved sources (${msg.sources.length})`}
+                      </button>
                     )}
+                    
+                    <button
+                      onClick={() => toggleSpeak(msg.content, idx)}
+                      style={styles.speakBtn}
+                      className={`speak-btn ${speakingIndex === idx ? 'speaking' : ''}`}
+                    >
+                      {speakingIndex === idx ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5" className="voice-waves" style={{ marginRight: '6px' }}>
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                          </svg>
+                          <span style={{ color: 'var(--color-secondary)' }}>Mute Voice</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '6px' }}>
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                          </svg>
+                          <span>Speak Response</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Sources Citation List Details */}
+                {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && expandedSources[idx] && (
+                  <div style={styles.sourcesList} className="animate-fade-in">
+                    {msg.sources.map((src, srcIdx) => (
+                      <div key={srcIdx} style={styles.sourceCard}>
+                        <div style={styles.sourceCardHeader}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={styles.sourceBadge}>Source {srcIdx + 1}</span>
+                            <span style={styles.sourceDocName} title={src.source}>{src.source}</span>
+                          </div>
+                          {src.page && <span style={styles.sourcePage}>Page {src.page}</span>}
+                        </div>
+                        <p style={styles.sourceContent}>"{src.content}"</p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -597,6 +748,19 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       {/* Input Form Footer */}
       <form onSubmit={handleSubmit} style={styles.form} className="responsive-form">
         <div style={styles.inputWrapper} className="glow-cyan">
+          {/* Language Toggle Button */}
+          {hasDocuments && (
+            <button
+              type="button"
+              onClick={toggleSpeechLanguage}
+              className="voice-lang-toggle-btn"
+              style={styles.langToggleBtn}
+              title={`Speech Recognition Language: ${speechLang === 'en-US' ? 'English' : 'Hindi'}. Click to toggle.`}
+            >
+              {speechLang === 'en-US' ? 'EN' : 'HI'}
+            </button>
+          )}
+
           <input
             type="text"
             placeholder={
@@ -613,6 +777,34 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
               cursor: !hasDocuments ? 'not-allowed' : 'text'
             }}
           />
+
+          {/* Voice Input Microphone Button */}
+          {hasDocuments && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={isGenerating}
+              className={`voice-mic-btn ${isListening ? 'listening' : ''}`}
+              style={styles.micBtn}
+              title={isListening ? "Listening... Click to stop." : "Voice Input (Speech-to-Text)"}
+            >
+              <svg 
+                width="18" 
+                height="18" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke={isListening ? "var(--color-secondary)" : "currentColor"} 
+                strokeWidth="2.5"
+                className={isListening ? "mic-listening-pulse" : ""}
+              >
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </button>
+          )}
+
           <button 
             type="submit" 
             disabled={isGenerating || !query.trim() || !hasDocuments}
@@ -813,6 +1005,29 @@ const styles = {
     opacity: 0.9,
     padding: '2px 0'
   },
+  assistantActionsRow: {
+    marginTop: '14px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+    paddingTop: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    flexWrap: 'wrap'
+  },
+  speakBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--text-muted)',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    outline: 'none',
+    opacity: 0.9,
+    padding: '2px 0',
+    transition: 'color 0.2s, opacity 0.2s'
+  },
   sourcesList: {
     marginTop: '12px',
     display: 'flex',
@@ -885,6 +1100,34 @@ const styles = {
     padding: '12px 16px',
     fontSize: '14px',
     fontFamily: 'var(--font-sans)',
+    outline: 'none'
+  },
+  langToggleBtn: {
+    background: 'rgba(255, 255, 255, 0.04)',
+    border: '1px solid var(--border-light)',
+    borderRadius: '8px',
+    color: 'var(--color-secondary)',
+    fontSize: '11px',
+    fontWeight: '700',
+    padding: '6px 10px',
+    cursor: 'pointer',
+    marginLeft: '6px',
+    fontFamily: 'var(--font-heading)',
+    transition: 'all 0.2s',
+    outline: 'none'
+  },
+  micBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--text-muted)',
+    padding: '12px',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: '6px',
+    transition: 'all 0.2s',
     outline: 'none'
   },
   sendBtn: {
