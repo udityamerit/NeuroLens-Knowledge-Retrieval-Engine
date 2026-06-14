@@ -196,7 +196,7 @@ export default function Sidebar({ documents, onUpload, onClear, onOpenSettings, 
 
 const styles = {
   sidebar: {
-    width: '320px',
+    width: '100%',
     height: '100%',
     background: 'var(--bg-sidebar)',
     borderRight: '1px solid var(--border-light)',

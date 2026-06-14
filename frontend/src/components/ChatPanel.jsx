@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments }) {
+export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar }) {
   const [query, setQuery] = useState('');
   const [expandedSources, setExpandedSources] = useState({});
   const chatEndRef = useRef(null);
@@ -410,11 +410,29 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       
       {/* Top Banner */}
       <div style={styles.header}>
-        <div style={styles.headerTitle}>
-          <div style={styles.pulseDot} />
-          <span style={{ fontSize: '13px', fontWeight: '600', color: '#e2e8f0' }}>NeuroLens Session</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button 
+              onClick={onToggleSidebar}
+              className="mobile-hamburger-btn"
+              title="Toggle Knowledge Library"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2.5">
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+          <div style={styles.headerTitle}>
+            <div style={styles.pulseDot} />
+            <span style={{ fontSize: '13px', fontWeight: '600', color: '#e2e8f0' }}>NeuroLens Session</span>
+          </div>
         </div>
-        <div style={styles.modelTag}>
+        
+        <div style={{
+          ...styles.modelTag,
+          fontSize: isMobile ? '10px' : '11px',
+          padding: isMobile ? '3px 8px' : '4px 10px'
+        }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}>
             <polygon points="12 2 2 7 12 12 22 7 12 2" />
             <polyline points="2 17 12 22 22 17" />
@@ -425,7 +443,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       </div>
 
       {/* Messages Feed */}
-      <div style={styles.feed}>
+      <div style={styles.feed} className="responsive-feed">
         {messages.length === 0 ? (
           <div style={styles.welcomeContainer} className="animate-fade-in">
             <div style={styles.welcomeIcon} className="animate-float">
@@ -440,7 +458,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
                 </defs>
               </svg>
             </div>
-            <h1 style={styles.welcomeTitle}>Unveil Document Insights</h1>
+            <h1 style={styles.welcomeTitle} className="responsive-welcome-title">Unveil Document Insights</h1>
             <p style={styles.welcomeSub}>
               NeuroLens leverages semantic vector mapping (FAISS) to scan your uploads and synthesize answers using state-of-the-art LLMs.
             </p>
@@ -491,7 +509,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             >
               {/* Message Bubble */}
               <div 
-                className="animate-slide-up"
+                className="animate-slide-up responsive-bubble"
                 style={{
                   ...styles.messageBubble,
                   ...(msg.role === 'user' ? styles.userBubble : styles.assistantBubble)
@@ -553,7 +571,15 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
         {/* Generating Animation */}
         {isGenerating && (
           <div style={styles.messageWrapper} className="animate-slide-up">
-            <div style={{ ...styles.messageBubble, ...styles.assistantBubble, padding: '16px' }}>
+            <div 
+              className="responsive-bubble"
+              style={{ 
+                ...styles.messageBubble, 
+                ...styles.assistantBubble, 
+                padding: isMobile ? '12px 14px' : '16px',
+                maxWidth: isMobile ? '90%' : '75%'
+              }}
+            >
               <div style={styles.typingContainer}>
                 <span style={styles.typingDot} />
                 <span style={{ ...styles.typingDot, animationDelay: '0.2s' }} />
@@ -569,7 +595,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       </div>
 
       {/* Input Form Footer */}
-      <form onSubmit={handleSubmit} style={styles.form}>
+      <form onSubmit={handleSubmit} style={styles.form} className="responsive-form">
         <div style={styles.inputWrapper} className="glow-cyan">
           <input
             type="text"
@@ -581,6 +607,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={isGenerating || !hasDocuments}
+            className="responsive-input"
             style={{
               ...styles.input,
               cursor: !hasDocuments ? 'not-allowed' : 'text'

@@ -238,6 +238,19 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAuthorOpen, setIsAuthorOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setIsSidebarOpen(false);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Initialize settings with fallback defaults, locally stored API keys and backend URL
   const [settings, setSettings] = useState(() => {
@@ -456,15 +469,38 @@ export default function App() {
     <div style={styles.appContainer} className="hologram-overlay">
       <div className="hologram-scanline" />
       
+      {/* Mobile Sidebar Overlay/Backdrop */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          className="responsive-backdrop animate-fade-in"
+        />
+      )}
+
       {/* Sidebar - File upload & listing */}
-      <Sidebar 
-        documents={documents}
-        onUpload={handleUpload}
-        onClear={handleClear}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenAuthor={() => setIsAuthorOpen(true)}
-        isUploading={isUploading}
-      />
+      <div className={`sidebar-wrapper ${isSidebarOpen ? 'open' : ''}`}>
+        <button 
+          onClick={() => setIsSidebarOpen(false)}
+          className="mobile-sidebar-close-btn"
+          title="Close Library"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+        <Sidebar 
+          documents={documents}
+          onUpload={(files) => {
+            handleUpload(files);
+            setIsSidebarOpen(false); // Close sidebar after upload on mobile
+          }}
+          onClear={handleClear}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenAuthor={() => setIsAuthorOpen(true)}
+          isUploading={isUploading}
+        />
+      </div>
 
       {/* Main Panel - Interactive Chat */}
       <ChatPanel 
@@ -473,6 +509,8 @@ export default function App() {
         isGenerating={isGenerating}
         activeModel={`${settings.provider.toUpperCase()} (${settings.modelName})`}
         hasDocuments={documents.length > 0}
+        isMobile={isMobile}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
       />
 
       {/* Settings Modal overlay */}

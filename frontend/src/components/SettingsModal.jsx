@@ -169,7 +169,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="responsive-grid">
             {/* Temperature Slider */}
             <div style={styles.formGroup}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
