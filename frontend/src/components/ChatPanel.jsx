@@ -613,7 +613,7 @@ const styles = {
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
-    background: 'radial-gradient(circle, rgba(6, 8, 20, 0.4) 0%, rgba(6, 8, 20, 0.88) 100%), url("/neural_bg.png") center/cover no-repeat',
+    background: `radial-gradient(circle, rgba(6, 8, 20, 0.4) 0%, rgba(6, 8, 20, 0.88) 100%), url("${import.meta.env.BASE_URL}neural_bg.png") center/cover no-repeat`,
     position: 'relative',
     overflow: 'hidden'
   },
