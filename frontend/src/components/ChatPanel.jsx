@@ -749,17 +749,20 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       <form onSubmit={handleSubmit} style={styles.form} className="responsive-form">
         <div style={styles.inputWrapper} className="glow-cyan">
           {/* Language Toggle Button */}
-          {hasDocuments && (
-            <button
-              type="button"
-              onClick={toggleSpeechLanguage}
-              className="voice-lang-toggle-btn"
-              style={styles.langToggleBtn}
-              title={`Speech Recognition Language: ${speechLang === 'en-US' ? 'English' : 'Hindi'}. Click to toggle.`}
-            >
-              {speechLang === 'en-US' ? 'EN' : 'HI'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={toggleSpeechLanguage}
+            disabled={!hasDocuments}
+            className="voice-lang-toggle-btn"
+            style={{
+              ...styles.langToggleBtn,
+              opacity: !hasDocuments ? 0.35 : 1,
+              cursor: !hasDocuments ? 'not-allowed' : 'pointer'
+            }}
+            title={!hasDocuments ? "Upload documents first to enable voice" : `Speech Recognition Language: ${speechLang === 'en-US' ? 'English' : 'Hindi'}. Click to toggle.`}
+          >
+            {speechLang === 'en-US' ? 'EN' : 'HI'}
+          </button>
 
           <input
             type="text"
@@ -779,31 +782,33 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
           />
 
           {/* Voice Input Microphone Button */}
-          {hasDocuments && (
-            <button
-              type="button"
-              onClick={toggleListening}
-              disabled={isGenerating}
-              className={`voice-mic-btn ${isListening ? 'listening' : ''}`}
-              style={styles.micBtn}
-              title={isListening ? "Listening... Click to stop." : "Voice Input (Speech-to-Text)"}
+          <button
+            type="button"
+            onClick={toggleListening}
+            disabled={isGenerating || !hasDocuments}
+            className={`voice-mic-btn ${isListening ? 'listening' : ''}`}
+            style={{
+              ...styles.micBtn,
+              opacity: !hasDocuments ? 0.35 : 1,
+              cursor: !hasDocuments ? 'not-allowed' : 'pointer'
+            }}
+            title={!hasDocuments ? "Upload documents first to enable voice" : isListening ? "Listening... Click to stop." : "Voice Input (Speech-to-Text)"}
+          >
+            <svg 
+              width="18" 
+              height="18" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke={isListening ? "var(--color-secondary)" : "currentColor"} 
+              strokeWidth="2.5"
+              className={isListening ? "mic-listening-pulse" : ""}
             >
-              <svg 
-                width="18" 
-                height="18" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke={isListening ? "var(--color-secondary)" : "currentColor"} 
-                strokeWidth="2.5"
-                className={isListening ? "mic-listening-pulse" : ""}
-              >
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
-            </button>
-          )}
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </button>
 
           <button 
             type="submit" 
