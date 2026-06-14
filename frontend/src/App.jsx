@@ -340,7 +340,19 @@ export default function App() {
     setIsGenerating(true);
 
     try {
-      if (!settings.apiKey) {
+      // Resolve API key: check settings first, then check build-time env vars as fallbacks
+      let resolvedKey = settings.apiKey;
+      if (!resolvedKey) {
+        if (settings.provider === 'groq') {
+          resolvedKey = import.meta.env.VITE_GROQ_API_KEY || '';
+        } else if (settings.provider === 'openai') {
+          resolvedKey = import.meta.env.VITE_OPENAI_API_KEY || '';
+        } else if (settings.provider === 'huggingface') {
+          resolvedKey = import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || '';
+        }
+      }
+
+      if (!resolvedKey) {
         throw new Error(`API Key for ${settings.provider.toUpperCase()} is missing. Please click the Settings gear icon in the sidebar and enter your API key to query.`);
       }
 
@@ -353,7 +365,7 @@ export default function App() {
         queryText,
         messages,
         settings.provider,
-        settings.apiKey,
+        resolvedKey,
         settings.modelName
       );
 
@@ -389,7 +401,7 @@ export default function App() {
       // 5. Query LLM endpoint directly from the browser
       const answer = await callLLM(
         settings.provider,
-        settings.apiKey,
+        resolvedKey,
         settings.modelName,
         promptMessages,
         settings.temperature
