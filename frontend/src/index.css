@@ -339,3 +339,27 @@ body {
     gap: 12px !important;
   }
 }
+
+/* Sidebar bottom control buttons hover effects */
+.sidebar-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.sidebar-author-btn:hover {
+  background: rgba(0, 245, 212, 0.12) !important;
+  border-color: rgba(0, 245, 212, 0.4) !important;
+  box-shadow: 0 0 12px rgba(0, 245, 212, 0.2);
+}
+
+.repo-link-btn:hover {
+  background: rgba(157, 78, 221, 0.12) !important;
+  border-color: rgba(157, 78, 221, 0.4) !important;
+  box-shadow: 0 0 12px rgba(157, 78, 221, 0.2);
+}
+
+.sidebar-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.05) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
