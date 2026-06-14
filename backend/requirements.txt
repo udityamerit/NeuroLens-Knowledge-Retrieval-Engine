@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+pypdf
+python-docx
+langchain
+langchain-community
+langchain-core
+faiss-cpu
+sentence-transformers
+langchain-groq
+langchain-huggingface
+openai
+python-dotenv
