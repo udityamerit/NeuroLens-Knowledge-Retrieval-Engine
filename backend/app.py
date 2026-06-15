@@ -4,8 +4,13 @@ from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
 from rag_engine import RAGEngine
+
+# Load environment variables
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+load_dotenv(dotenv_path=dotenv_path)
 
 app = FastAPI(title="NeuroLens Backend", description="FastAPI Server for NeuroLens Document RAG System")
 
@@ -38,6 +43,11 @@ class QueryRequest(BaseModel):
     modelName: str
     temperature: float = 0.3
     k: int = 5
+
+class TTSRequest(BaseModel):
+    text: str
+    language_code: Optional[str] = "en-IN"
+    speaker: Optional[str] = "shubh"
 
 @app.get("/")
 def read_root():
@@ -113,6 +123,62 @@ async def query_documents(request: QueryRequest):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process query: {str(e)}")
+
+@app.post("/api/tts")
+async def text_to_speech(request: TTSRequest):
+    """Converts text to speech using Sarvam AI Bulbul V3 API."""
+    api_key = os.getenv("SARVAM_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="SARVAM_API_KEY not found in backend environment.")
+    
+    text_clean = request.text.strip()
+    if not text_clean:
+        raise HTTPException(status_code=400, detail="Text cannot be empty.")
+    
+    # Auto-detect language
+    lang_code = request.language_code
+    contains_hindi = any(ord(char) >= 2304 and ord(char) <= 2431 for char in text_clean)
+    if contains_hindi:
+        lang_code = "hi-IN"
+    elif lang_code in ["en-US", "en-GB", "en-IN"]:
+        lang_code = "en-IN"
+    else:
+        lang_code = "en-IN"
+        
+    url = "https://api.sarvam.ai/text-to-speech"
+    headers = {
+        "api-subscription-key": api_key,
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "text": text_clean[:2500], # Sarvam limit is 2500 characters
+        "target_language_code": lang_code,
+        "speaker": request.speaker or "shubh",
+        "model": "bulbul:v3",
+        "pace": 1.0,
+        "speech_sample_rate": 22050
+    }
+    
+    try:
+        import urllib.request
+        import json
+        
+        req = urllib.request.Request(
+            url, 
+            data=json.dumps(data).encode("utf-8"), 
+            headers=headers, 
+            method="POST"
+        )
+        with urllib.request.urlopen(req) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            if "audios" in res_data and len(res_data["audios"]) > 0:
+                return {"audio": res_data["audios"][0]}
+            else:
+                raise HTTPException(status_code=500, detail="No audio data returned from Sarvam AI.")
+    except Exception as e:
+        print(f"Error in Sarvam TTS: {e}")
+        raise HTTPException(status_code=500, detail=f"Sarvam AI TTS Error: {str(e)}")
 
 @app.get("/api/documents")
 async def get_documents():

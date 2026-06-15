@@ -10,88 +10,309 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   const [speechLang, setSpeechLang] = useState('en-US'); // 'en-US' or 'hi-IN'
   const [speakingIndex, setSpeakingIndex] = useState(null);
   const recognitionRef = useRef(null);
+  const initialQueryRef = useRef('');
+  const audioRef = useRef(null);
+  const speakingSessionRef = useRef({
+    sentences: [],
+    currentIndex: 0,
+    cancelled: false,
+    nextAudioPromise: null
+  });
 
-  // Initialize Speech Recognition
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
-      
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
-          setQuery(prev => prev ? `${prev} ${transcript}` : transcript);
-        }
-      };
-      
-      recognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        setIsListening(false);
-      };
-      
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-      
-      recognitionRef.current = recognition;
-    }
-  }, []);
-
-  // Sync speech language config
-  useEffect(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.lang = speechLang;
-    }
-  }, [speechLang]);
-
-  // Clean up speaking states on unmount
+  // Clean up on unmount
   useEffect(() => {
     return () => {
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
+      speakingSessionRef.current.cancelled = true;
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      if (audioRef.current && audioRef.current !== "loading") {
+        try {
+          audioRef.current.pause();
+        } catch (e) {}
+      }
     };
   }, []);
 
   const toggleListening = () => {
-    if (!recognitionRef.current) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
       alert("Speech recognition is not supported in this browser. Try Chrome, Edge, or Safari.");
       return;
     }
     
     if (isListening) {
-      recognitionRef.current.stop();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      setIsListening(false);
     } else {
+      // Prevent running duplicate instances
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+
+      // Cancel any active speech/audio output before starting microphone capture
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      if (audioRef.current && audioRef.current !== "loading") {
+        try {
+          audioRef.current.pause();
+        } catch (e) {}
+      }
+      audioRef.current = null;
+      setSpeakingIndex(null);
+      speakingSessionRef.current.cancelled = true;
+
+      initialQueryRef.current = query;
       try {
-        recognitionRef.current.start();
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = speechLang === 'en-US' ? 'en-IN' : speechLang;
+        
+        recognition.onstart = () => {
+          setIsListening(true);
+        };
+        
+        recognition.onresult = (event) => {
+          let sessionTranscript = '';
+          for (let i = 0; i < event.results.length; ++i) {
+            if (event.results[i] && event.results[i][0]) {
+              sessionTranscript += event.results[i][0].transcript;
+            }
+          }
+          
+          const cleanedTranscript = sessionTranscript.trim();
+          if (cleanedTranscript) {
+            const prefix = initialQueryRef.current ? initialQueryRef.current.trim() : '';
+            setQuery(prefix ? `${prefix} ${cleanedTranscript}` : cleanedTranscript);
+          }
+        };
+        
+        recognition.onerror = (event) => {
+          console.error("Speech recognition error:", event.error);
+          setIsListening(false);
+          if (event.error === 'not-allowed') {
+            alert("Microphone access is blocked. Please allow microphone permissions in your browser settings.");
+          } else if (event.error === 'audio-capture') {
+            alert("Microphone not found or busy. Please check your connection and system microphone settings.");
+          } else if (event.error !== 'no-speech') {
+            alert("Speech recognition error: " + event.error);
+          }
+        };
+        
+        recognition.onend = () => {
+          setIsListening(false);
+          recognitionRef.current = null;
+        };
+        
+        recognitionRef.current = recognition;
+        setIsListening(true); // set state immediately for fast feedback
+        recognition.start();
       } catch (err) {
         console.error("Failed to start speech recognition:", err);
+        alert("Failed to start speech recognition: " + err.message);
+        setIsListening(false);
       }
     }
   };
 
   const toggleSpeechLanguage = () => {
-    setSpeechLang(prev => prev === 'en-US' ? 'hi-IN' : 'en-US');
+    const nextLang = speechLang === 'en-US' ? 'hi-IN' : 'en-US';
+    setSpeechLang(nextLang);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.lang = nextLang === 'en-US' ? 'en-IN' : nextLang;
+      } catch (e) {
+        console.error("Failed to change active speech lang:", e);
+      }
+    }
+  };
+
+  const fetchSentenceAudio = (text) => {
+    return fetch("http://127.0.0.1:8000/api/tts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        text: text,
+        language_code: speechLang
+      })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error("Status " + res.status);
+      return res.json();
+    })
+    .then(data => {
+      if (data.audio) {
+        const audioUrl = `data:audio/wav;base64,${data.audio}`;
+        return new Audio(audioUrl);
+      }
+      return null;
+    })
+    .catch(err => {
+      console.warn("Fetch failed for sentence:", text, err);
+      return null;
+    });
+  };
+
+  const speakSentenceLocal = (text, onEndCallback) => {
+    if (!window.speechSynthesis) {
+      onEndCallback();
+      return;
+    }
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    const containsHindi = /[\u0900-\u097F]/.test(text);
+    if (containsHindi) {
+      utterance.lang = 'hi-IN';
+      const voices = window.speechSynthesis.getVoices();
+      const hiVoice = voices.find(voice => voice.lang.includes('hi') || voice.lang.includes('HI'));
+      if (hiVoice) utterance.voice = hiVoice;
+    } else {
+      utterance.lang = 'en-US';
+      const voices = window.speechSynthesis.getVoices();
+      const enVoice = voices.find(voice => voice.lang.includes('en-US') || voice.lang.includes('en_US') || voice.lang.includes('en-GB') || voice.lang.includes('en_GB'));
+      if (enVoice) utterance.voice = enVoice;
+    }
+    
+    utterance.onend = () => {
+      onEndCallback();
+    };
+    
+    utterance.onerror = (e) => {
+      console.error("Local Speech synthesis error:", e);
+      onEndCallback();
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const playSessionSentence = (index) => {
+    const session = speakingSessionRef.current;
+    if (session.cancelled) return;
+    
+    if (index >= session.sentences.length) {
+      setSpeakingIndex(null);
+      audioRef.current = null;
+      return;
+    }
+    
+    session.currentIndex = index;
+    
+    let audioPromise = session.nextAudioPromise;
+    if (!audioPromise || index === 0) {
+      audioPromise = fetchSentenceAudio(session.sentences[index]);
+    }
+    
+    audioPromise.then(audio => {
+      if (session.cancelled) return;
+      
+      if (!audio) {
+        speakSentenceLocal(session.sentences[index], () => {
+          playSessionSentence(index + 1);
+        });
+        return;
+      }
+      
+      // Pre-fetch the next sentence immediately
+      if (index + 1 < session.sentences.length) {
+        session.nextAudioPromise = fetchSentenceAudio(session.sentences[index + 1]);
+      } else {
+        session.nextAudioPromise = null;
+      }
+      
+      audioRef.current = audio;
+      
+      audio.onended = () => {
+        if (session.cancelled) return;
+        playSessionSentence(index + 1);
+      };
+      
+      audio.onerror = (e) => {
+        console.error("Audio error during playback, trying next sentence:", e);
+        if (session.cancelled) return;
+        playSessionSentence(index + 1);
+      };
+      
+      audio.play().catch(playErr => {
+        console.error("Playback error:", playErr);
+        speakSentenceLocal(session.sentences[index], () => {
+          playSessionSentence(index + 1);
+        });
+      });
+    });
+  };
+
+  const speakLocal = (cleanText, index) => {
+    if (!window.speechSynthesis) {
+      setSpeakingIndex(null);
+      return;
+    }
+    
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    const containsHindi = /[\u0900-\u097F]/.test(cleanText);
+    if (containsHindi) {
+      utterance.lang = 'hi-IN';
+      const voices = window.speechSynthesis.getVoices();
+      const hiVoice = voices.find(voice => voice.lang.includes('hi') || voice.lang.includes('HI'));
+      if (hiVoice) utterance.voice = hiVoice;
+    } else {
+      utterance.lang = 'en-US';
+      const voices = window.speechSynthesis.getVoices();
+      const enVoice = voices.find(voice => voice.lang.includes('en-US') || voice.lang.includes('en_US') || voice.lang.includes('en-GB') || voice.lang.includes('en_GB'));
+      if (enVoice) utterance.voice = enVoice;
+    }
+    
+    utterance.onend = () => {
+      setSpeakingIndex(null);
+    };
+    
+    utterance.onerror = (e) => {
+      console.error("Local Speech synthesis error:", e);
+      setSpeakingIndex(null);
+    };
+    
+    setSpeakingIndex(index);
+    window.speechSynthesis.speak(utterance);
   };
 
   const toggleSpeak = (text, index) => {
-    if (!window.speechSynthesis) {
-      alert("Speech synthesis (TTS) is not supported in this browser.");
-      return;
-    }
-
     if (speakingIndex === index) {
-      window.speechSynthesis.cancel();
+      speakingSessionRef.current.cancelled = true;
+      if (audioRef.current && audioRef.current !== "loading") {
+        try {
+          audioRef.current.pause();
+        } catch (e) {}
+      }
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      audioRef.current = null;
       setSpeakingIndex(null);
     } else {
-      window.speechSynthesis.cancel();
-      
+      speakingSessionRef.current.cancelled = true; // cancel any previous session
+      if (audioRef.current && audioRef.current !== "loading") {
+        try {
+          audioRef.current.pause();
+        } catch (e) {}
+      }
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+
       let cleanText = text
         .replace(/📥 \*\*System:\*\*/g, '')
         .replace(/❌ \*\*Error running query:\*\*/g, '')
@@ -100,33 +321,34 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
         .replace(/###|##|#/g, '')
         .trim();
         
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      
-      // Auto-detect Hindi script characters
-      const containsHindi = /[\u0900-\u097F]/.test(cleanText);
-      if (containsHindi) {
-        utterance.lang = 'hi-IN';
-        const voices = window.speechSynthesis.getVoices();
-        const hiVoice = voices.find(voice => voice.lang.includes('hi') || voice.lang.includes('HI'));
-        if (hiVoice) utterance.voice = hiVoice;
-      } else {
-        utterance.lang = 'en-US';
-        const voices = window.speechSynthesis.getVoices();
-        const enVoice = voices.find(voice => voice.lang.includes('en-US') || voice.lang.includes('en_US') || voice.lang.includes('en-GB') || voice.lang.includes('en_GB'));
-        if (enVoice) utterance.voice = enVoice;
+      if (!cleanText) {
+        audioRef.current = null;
+        setSpeakingIndex(null);
+        return;
       }
-      
-      utterance.onend = () => {
+
+      // Split into sentences based on punctuation, ignoring empty strings
+      const sentences = cleanText
+        .split(/(?<=[.?!।\n])\s+/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+
+      if (sentences.length === 0) {
+        audioRef.current = null;
         setSpeakingIndex(null);
+        return;
+      }
+
+      speakingSessionRef.current = {
+        sentences: sentences,
+        currentIndex: 0,
+        cancelled: false,
+        nextAudioPromise: null
       };
-      
-      utterance.onerror = (e) => {
-        console.error("Speech synthesis error:", e);
-        setSpeakingIndex(null);
-      };
-      
+
+      audioRef.current = "loading";
       setSpeakingIndex(index);
-      window.speechSynthesis.speak(utterance);
+      playSessionSentence(0);
     }
   };
 
