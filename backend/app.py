@@ -126,43 +126,54 @@ async def query_documents(request: QueryRequest):
 
 @app.post("/api/tts")
 async def text_to_speech(request: TTSRequest):
-    """Converts text to speech using Sarvam AI Bulbul V3 API."""
-    api_key = os.getenv("SARVAM_API_KEY")
+    """Converts text to speech using ElevenLabs API with model eleven_v3."""
+    api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=400, detail="SARVAM_API_KEY not found in backend environment.")
+        api_key = "sk_aab469c456cca03fe3a4bf2d13f06541be3b7ae99c8e32e7"
     
     text_clean = request.text.strip()
     if not text_clean:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
     
-    # Auto-detect language
-    lang_code = request.language_code
-    contains_hindi = any(ord(char) >= 2304 and ord(char) <= 2431 for char in text_clean)
-    if contains_hindi:
-        lang_code = "hi-IN"
-    elif lang_code in ["en-US", "en-GB", "en-IN"]:
-        lang_code = "en-IN"
-    else:
-        lang_code = "en-IN"
+    # Working default voices mapping for the free tier key
+    WORKING_VOICES = {
+        "antoni": "ErXwobaYiN019PkySvjV",  # Male - warm, professional (Best default male)
+        "bella": "EXAVITQu4vr4xnSDxMaL",    # Female - clear, natural (Best default female)
+        "adam": "pNInz6obpgDQGcFmaJgB",     # Male - deep, narrative
+        "arnold": "VR6AewLTigWG4xSOukaG",   # Male - authoritative
+        "charlie": "IKne3meq5aSn9XLyUdCD"   # Male - casual
+    }
+    
+    # Select voice based on speaker preference
+    speaker_preference = (request.speaker or "").lower()
+    voice_id = WORKING_VOICES["antoni"] # Default best voice (Antoni)
+    
+    if speaker_preference in WORKING_VOICES:
+        voice_id = WORKING_VOICES[speaker_preference]
+    elif "female" in speaker_preference or "woman" in speaker_preference or "girl" in speaker_preference:
+        voice_id = WORKING_VOICES["bella"]
+    elif "male" in speaker_preference or "man" in speaker_preference or "boy" in speaker_preference:
+        voice_id = WORKING_VOICES["antoni"]
         
-    url = "https://api.sarvam.ai/text-to-speech"
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {
-        "api-subscription-key": api_key,
+        "xi-api-key": api_key,
         "Content-Type": "application/json"
     }
     
     data = {
-        "text": text_clean[:2500], # Sarvam limit is 2500 characters
-        "target_language_code": lang_code,
-        "speaker": request.speaker or "shubh",
-        "model": "bulbul:v3",
-        "pace": 1.0,
-        "speech_sample_rate": 22050
+        "text": text_clean,
+        "model_id": "eleven_v3",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75
+        }
     }
     
     try:
         import urllib.request
         import json
+        import base64
         
         req = urllib.request.Request(
             url, 
@@ -171,14 +182,21 @@ async def text_to_speech(request: TTSRequest):
             method="POST"
         )
         with urllib.request.urlopen(req) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            if "audios" in res_data and len(res_data["audios"]) > 0:
-                return {"audio": res_data["audios"][0]}
-            else:
-                raise HTTPException(status_code=500, detail="No audio data returned from Sarvam AI.")
+            audio_bytes = response.read()
+            # Encode audio bytes to base64
+            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+            return {"audio": audio_base64}
     except Exception as e:
-        print(f"Error in Sarvam TTS: {e}")
-        raise HTTPException(status_code=500, detail=f"Sarvam AI TTS Error: {str(e)}")
+        print(f"Error in ElevenLabs TTS: {e}")
+        error_details = str(e)
+        if hasattr(e, "read"):
+            try:
+                error_body = e.read().decode("utf-8")
+                print(f"ElevenLabs API Error Body: {error_body}")
+                error_details = error_body
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"ElevenLabs TTS Error: {error_details}")
 
 @app.get("/api/documents")
 async def get_documents():

@@ -58,5 +58,5 @@ jobs:
         # To pass your API keys securely to tests or scripts, sync them from GitHub Secrets here:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
 
