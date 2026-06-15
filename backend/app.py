@@ -129,7 +129,7 @@ async def text_to_speech(request: TTSRequest):
     """Converts text to speech using ElevenLabs API with model eleven_v3."""
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
-        api_key = "sk_aab469c456cca03fe3a4bf2d13f06541be3b7ae99c8e32e7"
+        api_key = api_key
     
     text_clean = request.text.strip()
     if not text_clean:
