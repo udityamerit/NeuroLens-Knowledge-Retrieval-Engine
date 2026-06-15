@@ -260,7 +260,8 @@ export default function App() {
       apiKey: localStorage.getItem(`neurolens_key_${provider}`) || '',
       modelName: 'llama-3.3-70b-versatile',
       temperature: 0.3,
-      k: 5
+      k: 5,
+      backendUrl: localStorage.getItem('neurolens_backend_url') || ''
     };
   });
 
@@ -512,6 +513,7 @@ export default function App() {
         hasDocuments={documents.length > 0}
         isMobile={isMobile}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        backendUrl={settings.backendUrl}
       />
 
       {/* Settings Modal overlay */}

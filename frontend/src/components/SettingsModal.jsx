@@ -28,6 +28,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
   const [modelName, setModelName] = useState(settings.modelName || 'llama-3.3-70b-versatile');
   const [temperature, setTemperature] = useState(settings.temperature || 0.3);
   const [k, setK] = useState(settings.k || 5);
+  const [backendUrl, setBackendUrl] = useState(settings.backendUrl || 'http://127.0.0.1:8000');
   const [showKey, setShowKey] = useState(false);
 
   // Load API keys stored in localStorage for convenience
@@ -57,13 +58,15 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
   const handleSave = () => {
     // Save to local storage for convenience
     localStorage.setItem(`neurolens_key_${provider}`, apiKey);
+    localStorage.setItem('neurolens_backend_url', backendUrl);
     
     onSave({
       provider,
       apiKey,
       modelName,
       temperature: parseFloat(temperature),
-      k: parseInt(k)
+      k: parseInt(k),
+      backendUrl
     });
     onClose();
   };
@@ -167,6 +170,21 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Backend Services URL (For TTS) */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Backend Services URL (For TTS)</label>
+            <input
+              type="text"
+              placeholder="e.g. http://127.0.0.1:8000"
+              value={backendUrl}
+              onChange={(e) => setBackendUrl(e.target.value)}
+              style={styles.input}
+            />
+            <p style={styles.helperText}>
+              Set this to your computer's local network IP address (e.g. `http://192.168.1.15:8000`) when accessing from a mobile device on your Wi-Fi network.
+            </p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="responsive-grid">

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar }) {
+export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar, backendUrl }) {
   const [query, setQuery] = useState('');
   const [expandedSources, setExpandedSources] = useState({});
   const chatEndRef = useRef(null);
@@ -12,6 +12,19 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   const recognitionRef = useRef(null);
   const initialQueryRef = useRef('');
   const audioRef = useRef(null);
+
+  // Resolve backend URL, defaulting to local network IP or localhost dynamically
+  const resolvedBackendUrl = (() => {
+    if (backendUrl) return backendUrl;
+    
+    // Auto-detect local host IP if served over local network
+    const host = window.location.hostname;
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || /^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host);
+    if (isLocal) {
+      return `http://${host}:8000`;
+    }
+    return 'http://127.0.0.1:8000';
+  })();
   const speakingSessionRef = useRef({
     sentences: [],
     currentIndex: 0,
@@ -141,7 +154,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   };
 
   const fetchSentenceAudio = (text) => {
-    return fetch("http://127.0.0.1:8000/api/tts", {
+    return fetch(`${resolvedBackendUrl}/api/tts`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -1341,7 +1354,8 @@ const styles = {
     marginLeft: '6px',
     fontFamily: 'var(--font-heading)',
     transition: 'all 0.2s',
-    outline: 'none'
+    outline: 'none',
+    flexShrink: 0
   },
   micBtn: {
     background: 'transparent',
@@ -1355,7 +1369,8 @@ const styles = {
     justifyContent: 'center',
     marginRight: '6px',
     transition: 'all 0.2s',
-    outline: 'none'
+    outline: 'none',
+    flexShrink: 0
   },
   sendBtn: {
     padding: '12px',
@@ -1365,7 +1380,8 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     transition: 'all 0.2s',
-    outline: 'none'
+    outline: 'none',
+    flexShrink: 0
   },
   typingContainer: {
     display: 'flex',
