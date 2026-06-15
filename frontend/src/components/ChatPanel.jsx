@@ -170,8 +170,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
     })
     .then(data => {
       if (data.audio) {
-        const audioUrl = `data:audio/wav;base64,${data.audio}`;
-        return new Audio(audioUrl);
+        return `data:audio/wav;base64,${data.audio}`;
       }
       return null;
     })
@@ -219,6 +218,11 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
     
     if (index >= session.sentences.length) {
       setSpeakingIndex(null);
+      if (audioRef.current && audioRef.current !== "loading") {
+        try {
+          audioRef.current.pause();
+        } catch (e) {}
+      }
       audioRef.current = null;
       return;
     }
@@ -230,10 +234,10 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       audioPromise = fetchSentenceAudio(session.sentences[index]);
     }
     
-    audioPromise.then(audio => {
+    audioPromise.then(audioUrl => {
       if (session.cancelled) return;
       
-      if (!audio) {
+      if (!audioUrl) {
         speakSentenceLocal(session.sentences[index], () => {
           playSessionSentence(index + 1);
         });
@@ -247,7 +251,18 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
         session.nextAudioPromise = null;
       }
       
-      audioRef.current = audio;
+      const audio = audioRef.current;
+      if (!audio || audio === "loading") {
+        speakSentenceLocal(session.sentences[index], () => {
+          playSessionSentence(index + 1);
+        });
+        return;
+      }
+      
+      audio.onended = null;
+      audio.onerror = null;
+      
+      audio.src = audioUrl;
       
       audio.onended = () => {
         if (session.cancelled) return;
@@ -359,7 +374,11 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
         nextAudioPromise: null
       };
 
-      audioRef.current = "loading";
+      // Create and play a dummy sound/unlock the audio element immediately under the user gesture
+      const audioInstance = new Audio();
+      audioInstance.play().catch(() => {});
+      audioRef.current = audioInstance;
+
       setSpeakingIndex(index);
       playSessionSentence(0);
     }
