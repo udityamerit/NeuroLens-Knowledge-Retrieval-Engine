@@ -261,7 +261,8 @@ export default function App() {
       modelName: 'llama-3.3-70b-versatile',
       temperature: 0.3,
       k: 5,
-      backendUrl: localStorage.getItem('neurolens_backend_url') || ''
+      backendUrl: localStorage.getItem('neurolens_backend_url') || '',
+      elevenLabsApiKey: localStorage.getItem('neurolens_key_elevenlabs') || ''
     };
   });
 
@@ -514,6 +515,7 @@ export default function App() {
         isMobile={isMobile}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         backendUrl={settings.backendUrl}
+        elevenLabsApiKey={settings.elevenLabsApiKey}
       />
 
       {/* Settings Modal overlay */}

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar, backendUrl }) {
+export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar, backendUrl, elevenLabsApiKey }) {
   const [query, setQuery] = useState('');
   const [expandedSources, setExpandedSources] = useState({});
   const chatEndRef = useRef(null);
@@ -154,6 +154,38 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   };
 
   const fetchSentenceAudio = (text) => {
+    const resolvedElevenLabsKey = elevenLabsApiKey || import.meta.env.VITE_ELEVENLABS_API_KEY || (typeof __ELEVENLABS_API_KEY__ !== 'undefined' ? __ELEVENLABS_API_KEY__ : '') || '';
+
+    if (resolvedElevenLabsKey) {
+      const voiceId = "ErXwobaYiN019PkySvjV"; // Antoni (Male - warm, professional)
+      return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": resolvedElevenLabsKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          text: text,
+          model_id: "eleven_v3",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75
+          }
+        })
+      })
+      .then(res => {
+        if (!res.ok) throw new Error("ElevenLabs Direct API returned status " + res.status);
+        return res.blob();
+      })
+      .then(blob => {
+        return URL.createObjectURL(blob);
+      })
+      .catch(err => {
+        console.warn("Direct ElevenLabs API fetch failed, falling back to local/default speech:", err);
+        return null;
+      });
+    }
+
     return fetch(`${resolvedBackendUrl}/api/tts`, {
       method: "POST",
       headers: {

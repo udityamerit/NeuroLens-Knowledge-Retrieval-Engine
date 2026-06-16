@@ -30,6 +30,8 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
   const [k, setK] = useState(settings.k || 5);
   const [backendUrl, setBackendUrl] = useState(settings.backendUrl || 'http://127.0.0.1:8000');
   const [showKey, setShowKey] = useState(false);
+  const [elevenLabsApiKey, setElevenLabsApiKey] = useState(settings.elevenLabsApiKey || '');
+  const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
 
   // Load API keys stored in localStorage for convenience
   const [savedKeys, setSavedKeys] = useState({
@@ -59,6 +61,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
     // Save to local storage for convenience
     localStorage.setItem(`neurolens_key_${provider}`, apiKey);
     localStorage.setItem('neurolens_backend_url', backendUrl);
+    localStorage.setItem('neurolens_key_elevenlabs', elevenLabsApiKey);
     
     onSave({
       provider,
@@ -66,7 +69,8 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
       modelName,
       temperature: parseFloat(temperature),
       k: parseInt(k),
-      backendUrl
+      backendUrl,
+      elevenLabsApiKey
     });
     onClose();
   };
@@ -184,6 +188,44 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
             />
             <p style={styles.helperText}>
               Set this to your computer's local network IP address (e.g. `http://192.168.1.15:8000`) when accessing from a mobile device on your Wi-Fi network.
+            </p>
+          </div>
+
+          {/* ElevenLabs API Key */}
+          <div style={styles.formGroup}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={styles.label}>ElevenLabs API Key (For Direct Browser TTS)</label>
+              <span style={styles.infoSpan}>Stored locally in browser</span>
+            </div>
+            <div style={styles.inputContainer}>
+              <input
+                type={showElevenLabsKey ? 'text' : 'password'}
+                placeholder="Paste your ElevenLabs API Key here..."
+                value={elevenLabsApiKey}
+                onChange={(e) => setElevenLabsApiKey(e.target.value)}
+                style={styles.input}
+              />
+              <button 
+                type="button" 
+                onClick={() => setShowElevenLabsKey(!showElevenLabsKey)} 
+                style={styles.toggleShowBtn}
+                title={showElevenLabsKey ? "Hide API Key" : "Show API Key"}
+              >
+                {showElevenLabsKey ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            <p style={styles.helperText}>
+              Allows direct, premium voice synthesis from the browser when deployed on GitHub Pages. If blank, falls back to local backend service or default browser voice.
             </p>
           </div>
 
