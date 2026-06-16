@@ -5,6 +5,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   const [expandedSources, setExpandedSources] = useState({});
   const chatEndRef = useRef(null);
   const canvasRef = useRef(null);
+  const inputRef = useRef(null);
 
   const [isListening, setIsListening] = useState(false);
   const [speechLang, setSpeechLang] = useState('en-US'); // 'en-US' or 'hi-IN'
@@ -86,6 +87,10 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       audioRef.current = null;
       setSpeakingIndex(null);
       speakingSessionRef.current.cancelled = true;
+      
+      if (inputRef.current) {
+        inputRef.current.blur();
+      }
 
       initialQueryRef.current = query;
       try {
@@ -1051,6 +1056,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
           </button>
 
           <input
+            ref={inputRef}
             type="text"
             placeholder={
               !hasDocuments 
@@ -1060,10 +1066,15 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={isGenerating || !hasDocuments}
+            readOnly={isListening}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
             className="responsive-input"
             style={{
               ...styles.input,
-              cursor: !hasDocuments ? 'not-allowed' : 'text'
+              cursor: isListening ? 'default' : (!hasDocuments ? 'not-allowed' : 'text')
             }}
           />
 
