@@ -3,6 +3,8 @@ import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
 import SettingsModal from './components/SettingsModal';
 import AuthorModal from './components/AuthorModal';
+import CameraModal from './components/CameraModal';
+import DocPreviewModal from './components/DocPreviewModal';
 
 // --- Client-Side RAG Helper Functions ---
 
@@ -37,6 +39,95 @@ async function parseDOCX(arrayBuffer) {
   }
   const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
   return [{ text: result.value, page: null }];
+}
+
+// Helper to call vision API for a single model
+async function callVisionAPI(url, model, apiKey, file, base64Data) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "You are an advanced document analyst and OCR engine. Describe this image in detail, transcribing all text, labels, structures, charts, graphs, or tables word-for-word. Provide a clear, structured textual description without repeating sentences or phrases. Avoid looping or duplicating descriptive statements."
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${file.type};base64,${base64Data}`
+              }
+            }
+          ]
+        }
+      ],
+      temperature: 0.5
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || `${model} vision completions failed.`);
+  }
+
+  const resData = await response.json();
+  return resData.choices[0].message.content;
+}
+
+// Describe/transcribe image content using Vision LLM (Groq Llama 4/3.2 Vision / OpenAI GPT-4o-mini)
+async function extractTextFromImage(file, provider, apiKey, modelName) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const dataUrl = reader.result;
+        const base64Data = dataUrl.split(',')[1];
+        
+        if (provider === 'groq') {
+          const url = "https://api.groq.com/openai/v1/chat/completions";
+          // Try newer vision models first, then fallback to others
+          const groqVisionModels = [
+            'meta-llama/llama-4-scout-17b-16e-instruct',
+            'qwen/qwen3.6-27b'
+          ];
+          
+          let lastError = null;
+          for (const model of groqVisionModels) {
+            try {
+              console.log(`Trying Groq vision model: ${model}`);
+              const resText = await callVisionAPI(url, model, apiKey, file, base64Data);
+              resolve(resText);
+              return;
+            } catch (e) {
+              console.warn(`Groq vision model ${model} failed, trying next fallback:`, e);
+              lastError = e;
+            }
+          }
+          reject(lastError || new Error("All Groq vision models failed. Please verify API key permissions."));
+          return;
+        } else if (provider === 'openai') {
+          const url = "https://api.openai.com/v1/chat/completions";
+          const visionModel = modelName.startsWith('gpt-4') ? modelName : 'gpt-4o-mini';
+          const resText = await callVisionAPI(url, visionModel, apiKey, file, base64Data);
+          resolve(resText);
+        } else {
+          reject(new Error("Image analysis is supported on Groq and OpenAI providers. Please switch provider in settings."));
+          return;
+        }
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = (e) => reject(new Error("Failed to read image file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 // Chunking: Recursive Character Text Splitter equivalent
@@ -241,6 +332,9 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [sessionImageUrls, setSessionImageUrls] = useState({});
 
   useEffect(() => {
     const handleResize = () => {
@@ -290,30 +384,66 @@ export default function App() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const filename = file.name;
-        const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+        const dotIndex = filename.lastIndexOf('.');
+        const ext = dotIndex !== -1 ? filename.substring(dotIndex).toLowerCase() : '';
+        const cleanExt = dotIndex !== -1 ? filename.substring(dotIndex + 1).toLowerCase() : 'txt';
         
         let pagesText = []; // array of {text, page}
         
-        const arrayBuffer = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsArrayBuffer(file);
-        });
+        const isImage = ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext);
+        if (isImage) {
+          // Read as data URL to store in sessionImageUrls for previewing
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result);
+              r.onerror = reject;
+              r.readAsDataURL(file);
+            });
+            setSessionImageUrls(prev => ({ ...prev, [filename]: dataUrl }));
+          } catch (e) {
+            console.warn("Failed to read image as Data URL for preview", e);
+          }
 
-        if (ext === '.pdf') {
-          pagesText = await parsePDF(arrayBuffer);
-        } else if (ext === '.docx' || ext === '.doc') {
-          pagesText = await parseDOCX(arrayBuffer);
+          let resolvedKey = settings.apiKey;
+          if (!resolvedKey) {
+            if (settings.provider === 'groq') {
+              resolvedKey = import.meta.env.VITE_GROQ_API_KEY || (typeof __GROQ_API_KEY__ !== 'undefined' ? __GROQ_API_KEY__ : '') || '';
+            } else if (settings.provider === 'openai') {
+              resolvedKey = import.meta.env.VITE_OPENAI_API_KEY || (typeof __OPENAI_API_KEY__ !== 'undefined' ? __OPENAI_API_KEY__ : '') || '';
+            }
+          }
+          if (!resolvedKey) {
+            throw new Error(`API Key for ${settings.provider.toUpperCase()} is required to analyze image documents. Please open settings and add your API key.`);
+          }
+          if (settings.provider !== 'groq' && settings.provider !== 'openai') {
+            throw new Error("Image analysis requires Groq or OpenAI provider. Please configure their credentials in Settings.");
+          }
+          
+          const extractedText = await extractTextFromImage(file, settings.provider, resolvedKey, settings.modelName);
+          pagesText = [{ text: extractedText, page: null }];
         } else {
-          // Default to plain text parsing
-          const text = new TextDecoder("utf-8").decode(arrayBuffer);
-          pagesText = [{ text, page: null }];
+          const arrayBuffer = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+          });
+
+          if (ext === '.pdf') {
+            pagesText = await parsePDF(arrayBuffer);
+          } else if (ext === '.docx' || ext === '.doc') {
+            pagesText = await parseDOCX(arrayBuffer);
+          } else {
+            // Default to plain text parsing
+            const text = new TextDecoder("utf-8").decode(arrayBuffer);
+            pagesText = [{ text, page: null }];
+          }
         }
 
         // Split pages/blocks into chunks
         pagesText.forEach(item => {
-          const chunks = splitTextIntoChunks(item.text, filename, ext.substring(1), item.page, 800, 150);
+          const chunks = splitTextIntoChunks(item.text, filename, cleanExt, item.page, 800, 150);
           newChunks.push(...chunks);
         });
 
@@ -701,6 +831,8 @@ export default function App() {
             handleFetchUrl(url);
           }}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenCamera={() => setIsCameraOpen(true)}
+          onPreviewDocument={(docName) => setPreviewDoc(docName)}
           onDeleteDocument={handleDeleteDocument}
           isUploading={isUploading}
           isFetchingUrl={isFetchingUrl}
@@ -735,6 +867,24 @@ export default function App() {
       <AuthorModal 
         isOpen={isAuthorOpen}
         onClose={() => setIsAuthorOpen(false)}
+      />
+
+      {/* Camera Scanner Modal overlay */}
+      <CameraModal 
+        isOpen={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onCapture={(file) => {
+          handleUpload([file]);
+        }}
+      />
+
+      {/* Document Preview Modal overlay */}
+      <DocPreviewModal 
+        isOpen={!!previewDoc}
+        onClose={() => setPreviewDoc(null)}
+        docName={previewDoc}
+        chunks={allChunks}
+        imageUrl={sessionImageUrls[previewDoc]}
       />
     </div>
   );

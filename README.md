@@ -104,8 +104,6 @@ sequenceDiagram
     API-->>User: Render Response with glowing source citation tags
 ```
 
-Detailed diagrams are also available inside the [architecture.mmd](architecture.mmd) file.
-
 ---
 
 ## ⚡ Setup & Installation
@@ -113,7 +111,7 @@ Detailed diagrams are also available inside the [architecture.mmd](architecture.
 ### Prerequisites
 
 *   **Node.js** (v18 or higher)
-*   **Python** (v3.9 or higher)
+*   **Python** (v3.10 or higher)
 
 ### Environment Configurations
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import Logo from './Logo';
 
-export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSettings, onDeleteDocument, isUploading, isFetchingUrl }) {
+export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSettings, onOpenCamera, onPreviewDocument, onDeleteDocument, isUploading, isFetchingUrl }) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef(null);
@@ -85,6 +85,14 @@ export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSetting
           <line x1="10" y1="9" x2="8" y2="9" />
         </svg>
       );
+    } else if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <polyline points="21 15 16 10 5 21" />
+        </svg>
+      );
     } else {
       return (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f5d4" strokeWidth="2">
@@ -123,7 +131,7 @@ export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSetting
           ref={fileInputRef}
           type="file" 
           multiple
-          accept=".pdf,.docx,.txt"
+          accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,.gif"
           onChange={handleFileChange}
           style={{ display: 'none' }}
           onClick={(e) => e.stopPropagation()}
@@ -132,8 +140,8 @@ export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSetting
         {isUploading ? (
           <div style={styles.uploadInner}>
             <div style={styles.spinner} className="animate-spin" />
-            <p style={styles.uploadText}>Indexing document...</p>
-            <p style={styles.uploadSubtext}>Structuring in FAISS database</p>
+            <p style={styles.uploadText}>Analyzing & indexing source...</p>
+            <p style={styles.uploadSubtext}>Running Vision LLM / extracting facts</p>
           </div>
         ) : (
           <div style={styles.uploadInner}>
@@ -143,9 +151,26 @@ export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSetting
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
             <p style={styles.uploadText}>Drag & Drop documents</p>
-            <p style={styles.uploadSubtext}>Supports PDF, DOCX, TXT</p>
+            <p style={styles.uploadSubtext}>Supports PDF, DOCX, TXT, Images</p>
           </div>
         )}
+      </div>
+
+      {/* Camera Button Container */}
+      <div style={styles.uploadButtonsRow}>
+        <button 
+          onClick={onOpenCamera} 
+          style={styles.cameraSubBtn}
+          disabled={isUploading}
+          className="sidebar-camera-btn"
+          title="Scan Document with Camera"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '6px' }}>
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+          Use Camera
+        </button>
       </div>
 
       {/* URL Fetch Section */}
@@ -213,10 +238,12 @@ export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSetting
             documents.map((doc, idx) => (
               <div 
                 key={idx} 
+                onClick={() => onPreviewDocument(doc)}
                 className="animate-fade-in doc-card-item"
                 style={{
                   ...styles.docCard,
-                  animationDelay: `${idx * 0.05}s`
+                  animationDelay: `${idx * 0.05}s`,
+                  cursor: 'pointer'
                 }}
               >
                 <div style={styles.docIcon}>
@@ -596,5 +623,43 @@ const styles = {
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
     marginBottom: '8px'
+  },
+  uploadButtonsRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '16px',
+    width: '100%'
+  },
+  uploadSubBtn: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '10px 8px',
+    borderRadius: '8px',
+    background: 'rgba(157, 78, 221, 0.06)',
+    border: '1px solid rgba(157, 78, 221, 0.2)',
+    color: '#c084fc',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.25s ease'
+  },
+  cameraSubBtn: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '10px 8px',
+    borderRadius: '8px',
+    background: 'rgba(0, 245, 212, 0.06)',
+    border: '1px solid rgba(0, 245, 212, 0.2)',
+    color: 'var(--color-secondary)',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.25s ease'
   }
 };

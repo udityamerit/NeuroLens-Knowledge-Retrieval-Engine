@@ -111,6 +111,145 @@ class RAGEngine:
                 print(f"  ❌ Error reading DOCX {filename}:")
                 traceback.print_exc()
                 
+        elif ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]:
+            try:
+                import base64
+                import json
+                import urllib.request
+                
+                print(f"  🖼️ Image file detected: {filename}. Processing with Vision LLM...")
+                
+                # Check for API keys in environment
+                groq_key = os.getenv("GROQ_API_KEY")
+                openai_key = os.getenv("OPENAI_API_KEY")
+                
+                with open(file_path, "rb") as img_file:
+                    img_data = img_file.read()
+                    base64_str = base64.b64encode(img_data).decode("utf-8")
+                
+                # Determine mime type
+                mime_type = "image/png"
+                if ext == ".jpg" or ext == ".jpeg":
+                    mime_type = "image/jpeg"
+                elif ext == ".webp":
+                    mime_type = "image/webp"
+                elif ext == ".gif":
+                    mime_type = "image/gif"
+                
+                extracted_text = None
+                
+                # Try Groq first if key exists
+                if groq_key:
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {groq_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    groq_models = [
+                        "meta-llama/llama-4-scout-17b-16e-instruct",
+                        "qwen/qwen3.6-27b"
+                    ]
+                    
+                    last_err = None
+                    for model in groq_models:
+                        try:
+                            print(f"    Trying Groq model: {model}...")
+                            payload = {
+                                "model": model,
+                                "messages": [
+                                    {
+                                        "role": "user",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": "You are an advanced document analyst and OCR engine. Describe this image in detail, transcribing all text, labels, structures, charts, graphs, or tables word-for-word. Provide a clear, structured textual description without repeating sentences or phrases. Avoid looping or duplicating descriptive statements."
+                                            },
+                                            {
+                                                "type": "image_url",
+                                                "image_url": {
+                                                    "url": f"data:{mime_type};base64,{base64_str}"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "temperature": 0.5
+                            }
+                            req = urllib.request.Request(
+                                url,
+                                data=json.dumps(payload).encode("utf-8"),
+                                headers=headers,
+                                method="POST"
+                            )
+                            with urllib.request.urlopen(req) as res:
+                                res_data = json.loads(res.read().decode("utf-8"))
+                                extracted_text = res_data["choices"][0]["message"]["content"]
+                            break # Success! Break out of model loop
+                        except Exception as e:
+                            print(f"      Model {model} failed: {e}")
+                            last_err = e
+                    
+                    if not extracted_text and not openai_key:
+                        raise last_err or Exception("All Groq vision models failed.")
+                
+                # Try OpenAI if Groq key doesn't exist but OpenAI key does
+                elif openai_key:
+                    print("    Using OpenAI GPT-4o-mini Vision Model...")
+                    url = "https://api.openai.com/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {openai_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": "gpt-4o-mini",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "You are an advanced document analyst and OCR engine. Describe this image in extreme detail, transcribing all text, labels, structures, charts, graphs, or tables word-for-word. Provide a complete textual description so it can be fully indexable by a search engine."
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{mime_type};base64,{base64_str}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "temperature": 0.1
+                    }
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers=headers,
+                        method="POST"
+                    )
+                    with urllib.request.urlopen(req) as res:
+                        res_data = json.loads(res.read().decode("utf-8"))
+                        extracted_text = res_data["choices"][0]["message"]["content"]
+                
+                else:
+                    raise Exception("No vision-capable API keys.")
+                
+                if extracted_text:
+                    documents.append(Document(
+                        page_content=extracted_text,
+                        metadata={
+                            "source": filename,
+                            "type": ext[1:]
+                        }
+                    ))
+                    print(f"  Processed Image: extracted {len(documents)} document blocks.")
+                    
+            except Exception as e:
+                import traceback
+                print(f"  ❌ Error processing image {filename}:")
+                traceback.print_exc()
+
         else: # Default to plain text
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:

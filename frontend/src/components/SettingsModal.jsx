@@ -173,10 +173,10 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
               {provider === 'groq' ? (
                 <>
                   <span style={{ color: '#4ade80', fontWeight: '600' }}>Groq API is free to use — no charges apply.</span>{' '}
-                  Leaving this blank will check for `GROQ_API_KEY` in the project's backend env.
+                  Leaving this blank will use the environment fallback key.
                 </>
               ) : (
-                <>Leaving this blank will prompt the server to check for the `{provider === 'openai' ? 'OPENAI_API_KEY' : 'HF_TOKEN'}` in the project's backend env.</>
+                <>Leaving this blank will use the environment fallback key.</>
               )}
             </p>
           </div>

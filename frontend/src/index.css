@@ -464,3 +464,39 @@ body {
   }
 }
 
+/* Sidebar action buttons micro-animations and glowing states */
+.sidebar-upload-btn, .sidebar-camera-btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.sidebar-upload-btn:hover {
+  background: rgba(157, 78, 221, 0.15) !important;
+  border-color: rgba(157, 78, 221, 0.45) !important;
+  box-shadow: 0 0 12px rgba(157, 78, 221, 0.25);
+  transform: translateY(-1.5px);
+  color: #ffffff !important;
+}
+
+.sidebar-camera-btn:hover {
+  background: rgba(0, 245, 212, 0.15) !important;
+  border-color: rgba(0, 245, 212, 0.45) !important;
+  box-shadow: 0 0 12px rgba(0, 245, 212, 0.25);
+  transform: translateY(-1.5px);
+  color: #ffffff !important;
+}
+
+.sidebar-upload-btn:active, .sidebar-camera-btn:active {
+  transform: translateY(0.5px);
+}
+
+/* Document cards interactive hover states */
+.doc-card-item {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.doc-card-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(0, 245, 212, 0.3) !important;
+  box-shadow: 0 0 12px rgba(0, 245, 212, 0.08);
+  transform: translateX(2px);
+}
