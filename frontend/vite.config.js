@@ -10,9 +10,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      legacy({
-        targets: ['defaults', 'not IE 11', 'chrome >= 51', 'android >= 5']
-      })
+      legacy()
     ],
     base: '/NeuroLens-Knowledge-Retrieval-Engine/',
     define: {
