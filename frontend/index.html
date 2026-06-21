@@ -4,8 +4,40 @@
     <!-- Early JavaScript crash catcher for WebView debugging -->
     <script>
       (function() {
+        // Safe body wrapper to prevent null reference errors on early script executions
+        try {
+          Object.defineProperty(document, 'body', {
+            get: function() {
+              return document.getElementsByTagName('body')[0] || document.head || document.documentElement;
+            },
+            configurable: true
+          });
+        } catch (e) {}
+
+        function displayHTMLRawError(title, err) {
+          try {
+            var div = document.createElement('div');
+            div.style.position = 'fixed';
+            div.style.top = '0';
+            div.style.left = '0';
+            div.style.width = '100%';
+            div.style.background = '#7f1d1d';
+            div.style.color = '#fecaca';
+            div.style.padding = '16px';
+            div.style.zIndex = '99999';
+            div.style.fontFamily = 'monospace';
+            div.style.fontSize = '12px';
+            div.style.overflow = 'auto';
+            div.style.maxHeight = '50vh';
+            div.style.borderBottom = '3px solid #dc2626';
+            div.innerHTML = '<strong>' + title + '</strong><pre style="white-space:pre-wrap;margin-top:8px;">' + err + '</pre>';
+            (document.body || document.documentElement).appendChild(div);
+          } catch(e) {}
+        }
+
         window.onerror = function(message, source, lineno, colno, error) {
           var errStr = message + '\nAt: ' + source + ':' + lineno + ':' + colno;
+          displayHTMLRawError('JavaScript Error', errStr);
           if (window.AndroidBridge) {
             window.AndroidBridge.reportError(errStr);
           }
@@ -14,6 +46,7 @@
         window.addEventListener('unhandledrejection', function(event) {
           var reason = event.reason;
           var errStr = 'Unhandled Rejection: ' + (reason && reason.stack ? reason.stack : reason);
+          displayHTMLRawError('Promise Rejection', errStr);
           if (window.AndroidBridge) {
             window.AndroidBridge.reportError(errStr);
           }

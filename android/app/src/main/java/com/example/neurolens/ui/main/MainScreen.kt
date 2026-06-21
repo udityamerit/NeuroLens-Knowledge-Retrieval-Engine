@@ -74,7 +74,7 @@ fun MainScreen(
     if (!isPageLoading) {
       kotlinx.coroutines.delay(6000)
       webView?.evaluateJavascript("window.__reactAppMounted") { value ->
-        if (value == null || value == "null" || value == "false") {
+        if (value == null || value == "null" || value == "false" || value == "undefined") {
           android.util.Log.w("NeuroLensWebView", "Watchdog triggered: React app failed to set window.__reactAppMounted")
           errorMessage = "Watchdog Timeout: The web app loaded but failed to initialize. Your device's WebView may not support modern ES module scripts."
         } else {
