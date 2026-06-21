@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
       react(),
       legacy()
     ],
-    base: '/NeuroLens-Knowledge-Retrieval-Engine/',
+    base: '',
     define: {
       '__GROQ_API_KEY__': JSON.stringify(env.GROQ_API_KEY || ''),
       '__OPENAI_API_KEY__': JSON.stringify(env.OPENAI_API_KEY || ''),

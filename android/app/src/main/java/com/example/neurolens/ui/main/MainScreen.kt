@@ -311,6 +311,8 @@ fun MainScreen(
             databaseEnabled = true
             allowFileAccess = true
             allowContentAccess = true
+            allowFileAccessFromFileURLs = true
+            allowUniversalAccessFromFileURLs = true
             loadWithOverviewMode = true
             useWideViewPort = true
             mediaPlaybackRequiresUserGesture = false
@@ -330,7 +332,7 @@ fun MainScreen(
           // Add Javascript interface
           addJavascriptInterface(jsBridge, "AndroidBridge")
 
-          loadUrl("https://udityamerit.github.io/NeuroLens-Knowledge-Retrieval-Engine/")
+          loadUrl("file:///android_asset/www/index.html")
           webView = this
         }
       },

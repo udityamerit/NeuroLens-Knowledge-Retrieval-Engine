@@ -59,3 +59,4 @@ android/build/
 *.apk
 *.aab
 *.ap_
+android/app/src/main/assets/www/

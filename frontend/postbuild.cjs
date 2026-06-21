@@ -38,6 +38,37 @@ if (polyfillMatch && entryMatch) {
   
   fs.writeFileSync(indexPath, html, 'utf8');
   console.log('Successfully rewrote index.html to use pure legacy loader.');
+
+  // Recusive directory copy helper
+  function copyFolderSync(from, to) {
+    if (!fs.existsSync(to)) {
+      fs.mkdirSync(to, { recursive: true });
+    }
+    fs.readdirSync(from).forEach(element => {
+      const fromPath = path.join(from, element);
+      const toPath = path.join(to, element);
+      if (fs.lstatSync(fromPath).isDirectory()) {
+        copyFolderSync(fromPath, toPath);
+      } else {
+        fs.copyFileSync(fromPath, toPath);
+      }
+    });
+  }
+
+  // Copy dist folder to Android assets/www
+  const assetsWwwPath = path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'assets', 'www');
+  try {
+    if (fs.existsSync(assetsWwwPath)) {
+      fs.rmSync(assetsWwwPath, { recursive: true, force: true });
+      console.log('Cleaned old Android assets/www folder.');
+    }
+    copyFolderSync(path.join(__dirname, 'dist'), assetsWwwPath);
+    console.log('Successfully copied all built assets to:', assetsWwwPath);
+  } catch (err) {
+    console.error('Failed to copy built assets to Android assets folder:', err);
+    process.exit(1);
+  }
+
 } else {
   console.error('Failed to find legacy assets in index.html');
   process.exit(1);
