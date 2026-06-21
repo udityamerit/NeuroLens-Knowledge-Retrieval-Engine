@@ -431,34 +431,77 @@ class RAGEngine:
         # 3. Retrieve documents
         relevant_chunks = self.get_relevant_chunks(search_query, k=k)
         
-        if not relevant_chunks:
-            return {
-                "answer": "No documents uploaded or indexed yet. Please upload files to get started.",
-                "sources": []
-            }
+        # Check if the user is asking about the creator/builder/developer of the project or studying the author
+        creator_keywords = ["creator", "create", "build", "developer", "who made", "who built", "who programmed", "author", "owner", "tiwari", "uditya", "programmer", "education", "experience", "resume", "cv", "portfolio", "study"]
+        author_study_keywords = ["author study", "study the author", "study the creator", "author's projects", "creator's projects", "github projects"]
+        
+        is_asking_about_creator = any(k in query.lower() for k in creator_keywords)
+        is_asking_about_author_study = any(k in query.lower() for k in author_study_keywords)
 
-        # 4. Build prompt context
-        context_str = ""
-        for i, chunk in enumerate(relevant_chunks):
-            source = chunk["metadata"].get("source", "Unknown")
-            page_info = f" (Page {chunk['metadata'].get('page')})" if "page" in chunk["metadata"] else ""
-            context_str += f"--- Source {i+1}: {source}{page_info} ---\n{chunk['content']}\n\n"
-
-        system_prompt = (
-            "You are NeuroLens, an advanced AI document analyst. "
-            "Your task is to answer the user's question based strictly on the provided context source blocks. "
-            "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). "
-            "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. "
-            "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n"
-            f"Here is the context retrieved from the documents:\n\n{context_str}"
+        # Developer Bio based on his actual resume
+        developer_bio = (
+            "You were created and developed by Uditya Narayan Tiwari, a highly skilled Machine Learning Engineer and Generative AI Developer.\n"
+            "Key credentials & background of Uditya:\n"
+            "- **Education**: Currently pursuing B.Tech in Computer Science Engineering with specialization in AI & ML at VIT Bhopal University (2023 - Present) with an impressive CGPA of 9.00.\n"
+            "- **Experience**: Technical Member & Community Admin of the Microsoft Learn Student Chapter (2025 - 2026), and Core Tech Team Member of the Matrix Media Club at VIT Bhopal (Jan 2025 - Jul 2025).\n"
+            "- **Key Projects**:\n"
+            "  1. **NeuroLens**: This exact AI-powered Knowledge Retrieval Engine (Python, LangChain, FAISS, RAG, LLMs).\n"
+            "  2. **Smart Medical Care For Rural Areas**: An AI symptom-to-medicine recommendation model using NLP, Sentence Transformers (cosine similarity + MMR), and Flask.\n"
+            "  3. **Breast Cancer Classification**: Machine learning model comparing SVM, Logistic Regression, Random Forest, achieving ~97% accuracy.\n"
+            "- **Certifications & Awards**: Geodata Processing & AI/ML Geodata Analysis certifications from the Indian Institute of Remote Sensing (IIRS), ISRO (2024); First Prize Winner in the VIT Bhopal Hackathon (Feb 2025); Final Round Qualifier in the JHU Hackathon (Jan 2025).\n\n"
+            "You MUST present the links in standard Markdown format so they render as clean clickable links:\n"
+            "- [Personal Portfolio](https://udityanarayantiwari.netlify.app/)\n"
+            "- [GitHub Profile](https://github.com/udityamerit)\n"
+            "- [LinkedIn Profile](https://www.linkedin.com/in/uditya-narayan-tiwari-562332289/)\n"
+            "- [Knowledge Base](https://udityaknowledgebase.netlify.app/)\n\n"
         )
+
+        if not relevant_chunks:
+            if is_asking_about_author_study or is_asking_about_creator:
+                system_prompt = (
+                    "You are NeuroLens, an advanced AI document intelligence engine. "
+                    "When asked about your creator, developer, programmer, or builder, or asked to study your author/projects, you must answer with his real resume profile:\n\n"
+                    f"{developer_bio}"
+                    "Respond with extreme professionalism and pride in Uditya's engineering work."
+                )
+            else:
+                system_prompt = (
+                    "You are NeuroLens, an advanced AI assistant. "
+                    "Respond to the user's question helpfully and clearly. "
+                    "Respond in the same language as the user's question."
+                )
+        else:
+            # 4. Build prompt context
+            context_str = ""
+            for i, chunk in enumerate(relevant_chunks):
+                source = chunk["metadata"].get("source", "Unknown")
+                page_info = f" (Page {chunk['metadata'].get('page')})" if "page" in chunk["metadata"] else ""
+                context_str += f"--- Source {i+1}: {source}{page_info} ---\n{chunk['content']}\n\n"
+
+            if is_asking_about_author_study or is_asking_about_creator:
+                system_prompt = (
+                    "You are NeuroLens, an advanced AI document intelligence engine. "
+                    "In addition to answering from the documents, when asked about your creator, developer, programmer, builder, or asked to study your author/projects, you must respond with his real resume profile:\n\n"
+                    f"{developer_bio}"
+                    "Explain that you are analyzing the documents loaded into your library, but first proudly introduce Uditya Narayan Tiwari as your creator.\n\n"
+                    f"Here is the context from the documents:\n\n{context_str}"
+                )
+            else:
+                system_prompt = (
+                    "You are NeuroLens, an advanced AI document analyst. "
+                    "Your task is to answer the user's question based strictly on the provided context source blocks. "
+                    "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). "
+                    "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. "
+                    "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n"
+                    f"Here is the context retrieved from the documents:\n\n{context_str}"
+                )
 
         # 5. Call LLM
         answer = ""
         try:
             if provider.lower() == "groq":
                 if not resolved_key:
-                    raise ValueError("Groq API key not found. Please provide it in Settings or add GROQ_API_KEY to your env.")
+                    raise ValueError("Groq API key not found. Please provide it in Settings.")
                 from langchain_groq import ChatGroq
                 llm = ChatGroq(
                     api_key=resolved_key,
@@ -481,7 +524,7 @@ class RAGEngine:
 
             elif provider.lower() == "openai":
                 if not resolved_key:
-                    raise ValueError("OpenAI API key not found. Please provide it in Settings or add OPENAI_API_KEY to your env.")
+                    raise ValueError("OpenAI API key not found. Please provide it in Settings.")
                 from langchain_community.chat_models import ChatOpenAI
                 llm = ChatOpenAI(
                     api_key=resolved_key,
@@ -504,7 +547,7 @@ class RAGEngine:
 
             elif provider.lower() == "huggingface":
                 if not resolved_key:
-                    raise ValueError("Hugging Face API token not found. Please provide it in Settings or add HF_TOKEN to your env.")
+                    raise ValueError("Hugging Face API token not found. Please provide it in Settings.")
                 from langchain_huggingface import HuggingFaceEndpoint
                 llm = HuggingFaceEndpoint(
                     repo_id=model_name,

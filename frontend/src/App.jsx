@@ -677,37 +677,82 @@ export default function App() {
         throw new Error(`API Key for ${settings.provider.toUpperCase()} is missing. Please click the Settings gear icon in the sidebar and enter your API key to query.`);
       }
 
-      if (allChunks.length === 0) {
-        throw new Error("No documents indexed. Please upload files in the sidebar before searching.");
+      let systemPrompt = "";
+      let relevantChunks = [];
+
+      const creatorKeywords = ["creator", "create", "build", "developer", "who made", "who built", "who programmed", "author", "owner", "tiwari", "uditya", "programmer", "education", "experience", "resume", "cv", "portfolio", "study"];
+      const authorStudyKeywords = ["author study", "study the author", "study the creator", "author's projects", "creator's projects", "github projects"];
+      
+      const isAskingAboutCreator = creatorKeywords.some(k => queryText.toLowerCase().includes(k));
+      const isAskingAboutAuthorStudy = authorStudyKeywords.some(k => queryText.toLowerCase().includes(k));
+
+      const developerBio = 
+        "You were created and developed by Uditya Narayan Tiwari, a highly skilled Machine Learning Engineer and Generative AI Developer.\n" +
+        "Key credentials & background of Uditya:\n" +
+        "- **Education**: Currently pursuing B.Tech in Computer Science Engineering with specialization in AI & ML at VIT Bhopal University (2023 - Present) with an impressive CGPA of 9.00.\n" +
+        "- **Experience**: Technical Member & Community Admin of the Microsoft Learn Student Chapter (2025 - 2026), and Core Tech Team Member of the Matrix Media Club at VIT Bhopal (Jan 2025 - Jul 2025).\n" +
+        "- **Key Projects**:\n" +
+        "  1. **NeuroLens**: This exact AI-powered Knowledge Retrieval Engine (Python, LangChain, FAISS, RAG, LLMs).\n" +
+        "  2. **Smart Medical Care For Rural Areas**: An AI symptom-to-medicine recommendation model using NLP, Sentence Transformers (cosine similarity + MMR), and Flask.\n" +
+        "  3. **Breast Cancer Classification**: Machine learning model comparing SVM, Logistic Regression, Random Forest, achieving ~97% accuracy.\n" +
+        "- **Certifications & Awards**: Geodata Processing & AI/ML Geodata Analysis certifications from the Indian Institute of Remote Sensing (IIRS), ISRO (2024); First Prize Winner in the VIT Bhopal Hackathon (Feb 2025); Final Round Qualifier in the JHU Hackathon (Jan 2025).\n\n" +
+        "You MUST present the links in standard Markdown format so they render as clean clickable links:\n" +
+        "- [Personal Portfolio](https://udityanarayantiwari.netlify.app/)\n" +
+        "- [GitHub Profile](https://github.com/udityamerit)\n" +
+        "- [LinkedIn Profile](https://www.linkedin.com/in/uditya-narayan-tiwari-562332289/)\n" +
+        "- [Knowledge Base](https://udityaknowledgebase.netlify.app/)\n\n";
+
+      if (allChunks.length > 0) {
+        // 1. Generate standalone query using chat history context
+        const searchQuery = await generateStandaloneQuery(
+          queryText,
+          messages,
+          settings.provider,
+          resolvedKey,
+          settings.modelName
+        );
+
+        // 2. Perform client-side retrieval
+        relevantChunks = searchChunks(searchQuery, allChunks, settings.k);
+
+        // 3. Format system prompt context
+        let contextStr = "";
+        relevantChunks.forEach((chunk, i) => {
+          const source = chunk.metadata.source || "Unknown";
+          const pageInfo = chunk.metadata.page ? ` (Page ${chunk.metadata.page})` : "";
+          contextStr += `--- Source ${i + 1}: ${source}${pageInfo} ---\n${chunk.content}\n\n`;
+        });
+
+        if (isAskingAboutAuthorStudy || isAskingAboutCreator) {
+          systemPrompt = 
+            "You are NeuroLens, an advanced AI document intelligence engine. " +
+            "In addition to answering from the documents, when asked about your creator, developer, programmer, builder, or asked to study your author/projects, you must respond with his real resume profile:\n\n" +
+            `${developerBio}` +
+            "Explain that you are analyzing the documents loaded into your library, but first proudly introduce Uditya Narayan Tiwari as your creator.\n\n" +
+            `Here is the context from the documents:\n\n${contextStr}`;
+        } else {
+          systemPrompt = 
+            "You are NeuroLens, an advanced AI document analyst. " +
+            "Your task is to answer the user's question based strictly on the provided context source blocks. " +
+            "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). " +
+            "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. " +
+            "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n" +
+            `Here is the context retrieved from the documents:\n\n${contextStr}`;
+        }
+      } else {
+        if (isAskingAboutAuthorStudy || isAskingAboutCreator) {
+          systemPrompt = 
+            "You are NeuroLens, an advanced AI document intelligence engine. " +
+            "When asked about your creator, developer, programmer, or builder, or asked to study your author/projects, you must answer with his real resume profile:\n\n" +
+            `${developerBio}` +
+            "Present this information with extreme professionalism and pride in Uditya's engineering.";
+        } else {
+          systemPrompt = 
+            "You are NeuroLens, an advanced AI assistant. " +
+            "Respond to the user's question helpfully and clearly. " +
+            "Respond in the same language as the user's question.";
+        }
       }
-
-      // 1. Generate standalone query using chat history context
-      const searchQuery = await generateStandaloneQuery(
-        queryText,
-        messages,
-        settings.provider,
-        resolvedKey,
-        settings.modelName
-      );
-
-      // 2. Perform client-side retrieval
-      const relevantChunks = searchChunks(searchQuery, allChunks, settings.k);
-
-      // 3. Format system prompt context
-      let contextStr = "";
-      relevantChunks.forEach((chunk, i) => {
-        const source = chunk.metadata.source || "Unknown";
-        const pageInfo = chunk.metadata.page ? ` (Page ${chunk.metadata.page})` : "";
-        contextStr += `--- Source ${i + 1}: ${source}${pageInfo} ---\n${chunk.content}\n\n`;
-      });
-
-      const systemPrompt = 
-        "You are NeuroLens, an advanced AI document analyst. " +
-        "Your task is to answer the user's question based strictly on the provided context source blocks. " +
-        "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). " +
-        "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. " +
-        "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n" +
-        `Here is the context retrieved from the documents:\n\n${contextStr}`;
 
       // 4. Build message logs incorporating chat history
       const promptMessages = [{ role: "system", content: systemPrompt }];

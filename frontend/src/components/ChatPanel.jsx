@@ -659,11 +659,12 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   const formatMessageText = (text) => {
     if (!text) return '';
     
-    // Helper to render inline formatting: bold (**), italic (*), code (`), and source tags ([Source X])
+    // Helper to render inline formatting: bold (**), italic (*), code (`), source tags ([Source X]), and Markdown links ([text](url))
     const renderInline = (inlineText) => {
       if (!inlineText) return '';
       
-      const inlineRegex = /(\*\*.*?\*\*|\*.*?\*|`.*?`|\[Source \d+\])/g;
+      // Regex to split on bold, italic, code, source tags, and markdown links
+      const inlineRegex = /(\*\*.*?\*\*|\*.*?\*|`.*?`|\[Source \d+\]|\[[^\]]+\]\([^)]+\))/g;
       const parts = inlineText.split(inlineRegex);
       
       return parts.map((part, idx) => {
@@ -711,6 +712,29 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             >
               {part}
             </span>
+          );
+        }
+        if (part.startsWith('[') && part.includes('](')) {
+          const closingBracketIdx = part.indexOf('](');
+          const label = part.substring(1, closingBracketIdx);
+          const url = part.substring(closingBracketIdx + 2, part.length - 1);
+          return (
+            <a
+              key={idx}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: '#00f5d4',
+                textDecoration: 'underline',
+                fontWeight: '600',
+                transition: 'color 0.2s'
+              }}
+              onMouseOver={(e) => e.target.style.color = '#9d4edd'}
+              onMouseOut={(e) => e.target.style.color = '#00f5d4'}
+            >
+              {label}
+            </a>
           );
         }
         return part;
@@ -862,15 +886,57 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
         {messages.length === 0 ? (
           <div style={styles.welcomeContainer} className="animate-fade-in">
             <div style={styles.welcomeIcon} className="animate-float">
-              <svg width="48" height="48" viewBox="0 0 100 100" fill="none">
-                <circle cx="50" cy="50" r="40" stroke="url(#welcome-grad)" strokeWidth="3" strokeDasharray="5 5" />
-                <path d="M50 30 V70 M30 50 H70" stroke="#00f5d4" strokeWidth="4" strokeLinecap="round" />
+              <svg width="80" height="80" viewBox="0 0 100 100" fill="none">
                 <defs>
-                  <linearGradient id="welcome-grad" x1="0" y1="0" x2="1" y2="1">
+                  <linearGradient id="welcome-neurolens-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stopColor="#9d4edd" />
                     <stop offset="100%" stopColor="#00f5d4" />
                   </linearGradient>
+                  <radialGradient id="welcome-glow-grad" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#00f5d4" stopOpacity="0.35" />
+                    <stop offset="100%" stopColor="#9d4edd" stopOpacity="0" />
+                  </radialGradient>
                 </defs>
+                
+                {/* Glow backdrop */}
+                <circle cx="50" cy="50" r="40" fill="url(#welcome-glow-grad)" />
+
+                {/* Outer Tech Ring */}
+                <circle 
+                  cx="50" 
+                  cy="50" 
+                  r="42" 
+                  stroke="url(#welcome-neurolens-gradient)" 
+                  strokeWidth="3" 
+                  strokeDasharray="10 15 30 15" 
+                />
+                
+                {/* Inner Aperture Circle */}
+                <circle 
+                  cx="50" 
+                  cy="50" 
+                  r="26" 
+                  stroke="url(#welcome-neurolens-gradient)" 
+                  strokeWidth="2.5" 
+                  strokeDasharray="4 4"
+                />
+
+                {/* Neural Network Connections */}
+                <line x1="50" y1="50" x2="28" y2="35" stroke="#9d4edd" strokeWidth="1.5" strokeOpacity="0.75" />
+                <line x1="50" y1="50" x2="72" y2="35" stroke="#9d4edd" strokeWidth="1.5" strokeOpacity="0.75" />
+                <line x1="50" y1="50" x2="35" y2="70" stroke="#00f5d4" strokeWidth="1.5" strokeOpacity="0.75" />
+                <line x1="50" y1="50" x2="65" y2="70" stroke="#00f5d4" strokeWidth="1.5" strokeOpacity="0.75" />
+                
+                <line x1="28" y1="35" x2="72" y2="35" stroke="#9d4edd" strokeWidth="1" strokeOpacity="0.45" strokeDasharray="3 3" />
+                <line x1="35" y1="70" x2="65" y2="70" stroke="#00f5d4" strokeWidth="1" strokeOpacity="0.45" strokeDasharray="3 3" />
+
+                {/* Neural Network Nodes */}
+                <circle cx="50" cy="50" r="8" fill="#00f5d4" />
+                
+                <circle cx="28" cy="35" r="4" fill="#9d4edd" />
+                <circle cx="72" cy="35" r="4" fill="#9d4edd" />
+                <circle cx="35" cy="70" r="4" fill="#00f5d4" />
+                <circle cx="65" cy="70" r="4" fill="#00f5d4" />
               </svg>
             </div>
             <h1 style={styles.welcomeTitle} className="responsive-welcome-title">Unveil Document Insights</h1>
@@ -888,7 +954,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
                 <div style={{ textAlign: 'left' }}>
                   <p style={{ fontWeight: '600', fontSize: '13px', color: '#ffffff' }}>To get started:</p>
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Upload files (PDF, DOCX, TXT) or paste a URL in the left sidebar, then write your question below!
+                    Upload files (PDF, DOCX, TXT) or paste a URL in the left sidebar, or type directly below to chat with NeuroLens!
                   </p>
                   <div style={{
                     display: 'flex',
@@ -1061,14 +1127,14 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
           <button
             type="button"
             onClick={toggleSpeechLanguage}
-            disabled={!hasDocuments}
+            disabled={isGenerating}
             className="voice-lang-toggle-btn"
             style={{
               ...styles.langToggleBtn,
-              opacity: !hasDocuments ? 0.35 : 1,
-              cursor: !hasDocuments ? 'not-allowed' : 'pointer'
+              opacity: 1,
+              cursor: 'pointer'
             }}
-            title={!hasDocuments ? "Upload documents first to enable voice" : `Speech Recognition Language: ${speechLang === 'en-US' ? 'English' : 'Hindi'}. Click to toggle.`}
+            title={`Speech Recognition Language: ${speechLang === 'en-US' ? 'English' : 'Hindi'}. Click to toggle.`}
           >
             {speechLang === 'en-US' ? 'EN' : 'HI'}
           </button>
@@ -1077,13 +1143,15 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             ref={inputRef}
             type="text"
             placeholder={
-              !hasDocuments 
-                ? "Upload documents first to start analyzing..." 
-                : "Ask NeuroLens anything about your documents..."
+              isGenerating
+                ? "Generating response..."
+                : (hasDocuments 
+                  ? "Ask NeuroLens anything about your documents..." 
+                  : "Ask NeuroLens anything (Chat mode)...")
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            disabled={isGenerating || !hasDocuments}
+            disabled={isGenerating}
             readOnly={isListening}
             autoComplete="off"
             autoCorrect="off"
@@ -1092,7 +1160,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             className="responsive-input"
             style={{
               ...styles.input,
-              cursor: isListening ? 'default' : (!hasDocuments ? 'not-allowed' : 'text')
+              cursor: isListening ? 'default' : 'text'
             }}
           />
 
@@ -1100,14 +1168,14 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
           <button
             type="button"
             onClick={toggleListening}
-            disabled={isGenerating || !hasDocuments}
+            disabled={isGenerating}
             className={`voice-mic-btn ${isListening ? 'listening' : ''}`}
             style={{
               ...styles.micBtn,
-              opacity: !hasDocuments ? 0.35 : 1,
-              cursor: !hasDocuments ? 'not-allowed' : 'pointer'
+              opacity: 1,
+              cursor: 'pointer'
             }}
-            title={!hasDocuments ? "Upload documents first to enable voice" : isListening ? "Listening... Click to stop." : "Voice Input (Speech-to-Text)"}
+            title={isListening ? "Listening... Click to stop." : "Voice Input (Speech-to-Text)"}
           >
             <svg 
               width="18" 
@@ -1127,12 +1195,12 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
 
           <button 
             type="submit" 
-            disabled={isGenerating || !query.trim() || !hasDocuments}
+            disabled={isGenerating || !query.trim()}
             style={{
               ...styles.sendBtn,
-              background: (!query.trim() || isGenerating || !hasDocuments) ? 'rgba(255,255,255,0.03)' : 'linear-gradient(135deg, var(--color-primary), #7b2cbf)',
-              color: (!query.trim() || isGenerating || !hasDocuments) ? 'var(--text-muted)' : '#ffffff',
-              cursor: (!query.trim() || isGenerating || !hasDocuments) ? 'not-allowed' : 'pointer'
+              background: (!query.trim() || isGenerating) ? 'rgba(255,255,255,0.03)' : 'linear-gradient(135deg, var(--color-primary), #7b2cbf)',
+              color: (!query.trim() || isGenerating) ? 'var(--text-muted)' : '#ffffff',
+              cursor: (!query.trim() || isGenerating) ? 'not-allowed' : 'pointer'
             }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
