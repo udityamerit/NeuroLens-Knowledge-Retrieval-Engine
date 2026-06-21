@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import legacy from '@vitejs/plugin-legacy'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -7,7 +8,12 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '../', ['VITE_', 'GROQ_', 'OPENAI_', 'HF_', 'ELEVENLABS_'])
   
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      legacy({
+        targets: ['defaults', 'not IE 11', 'chrome >= 51', 'android >= 5']
+      })
+    ],
     base: '/NeuroLens-Knowledge-Retrieval-Engine/',
     define: {
       '__GROQ_API_KEY__': JSON.stringify(env.GROQ_API_KEY || ''),

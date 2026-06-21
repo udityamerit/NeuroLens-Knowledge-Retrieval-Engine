@@ -1,6 +1,25 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- Early JavaScript crash catcher for WebView debugging -->
+    <script>
+      (function() {
+        window.onerror = function(message, source, lineno, colno, error) {
+          var errStr = message + '\nAt: ' + source + ':' + lineno + ':' + colno;
+          if (window.AndroidBridge) {
+            window.AndroidBridge.reportError(errStr);
+          }
+          return false;
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event.reason;
+          var errStr = 'Unhandled Rejection: ' + (reason && reason.stack ? reason.stack : reason);
+          if (window.AndroidBridge) {
+            window.AndroidBridge.reportError(errStr);
+          }
+        });
+      })();
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg?v=2" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

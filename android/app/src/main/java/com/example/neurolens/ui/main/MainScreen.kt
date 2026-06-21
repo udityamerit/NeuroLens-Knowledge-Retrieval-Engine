@@ -301,6 +301,10 @@ fun MainScreen(
           }
 
           // Configure standard WebView settings for modern React applications
+          // Clear cache on startup to prevent loading stale cached assets
+          clearCache(true)
+
+          // Configure standard WebView settings for modern React applications
           settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -311,6 +315,9 @@ fun MainScreen(
             useWideViewPort = true
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+
+            // Force WebView to skip caching to ensure new legacy bundles are loaded
+            cacheMode = WebSettings.LOAD_NO_CACHE
 
             // Set browser user-agent to bypass any mobile browser restriction checks
             userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -334,7 +341,8 @@ fun MainScreen(
 
     if (isPageLoading) {
       CircularProgressIndicator(
-        modifier = Modifier.align(Alignment.Center)
+        modifier = Modifier.align(Alignment.Center),
+        color = Color(0xFF00F5D4)
       )
     }
 
