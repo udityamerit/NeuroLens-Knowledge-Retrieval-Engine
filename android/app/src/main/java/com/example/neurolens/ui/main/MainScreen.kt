@@ -1,413 +1,597 @@
 package com.example.neurolens.ui.main
 
-import android.Manifest
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.net.Uri
-import android.net.http.SslError
-import android.view.View
-import android.os.Handler
-import android.os.Looper
-import android.webkit.ConsoleMessage
-import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
-import android.webkit.PermissionRequest
-import android.webkit.SslErrorHandler
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceResponse
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.webkit.WebViewAssetLoader
-import androidx.webkit.WebViewAssetLoader.AssetsPathHandler
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.*
+import androidx.compose.foundation.text.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.*
+import androidx.compose.ui.platform.*
+import androidx.compose.ui.text.*
+import androidx.compose.ui.text.font.*
+import androidx.compose.ui.text.input.*
+import androidx.compose.ui.text.style.*
+import androidx.compose.ui.unit.*
+import androidx.compose.ui.window.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
+import com.example.neurolens.data.model.AppSettings
+import com.example.neurolens.data.model.RAGSource
+import com.example.neurolens.ui.components.*
+import kotlinx.coroutines.launch
+import java.util.Locale
 
-@SuppressLint("SetJavaScriptEnabled")
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-  onItemClick: (NavKey) -> Unit,
-  modifier: Modifier = Modifier,
+    onItemClick: (NavKey) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-  var webView: WebView? by remember { mutableStateOf(null) }
-  var isPageLoading by remember { mutableStateOf(true) }
-  var errorMessage by remember { mutableStateOf<String?>(null) }
-
-  // Add Javascript Interface
-  val jsBridge = remember {
-    JSBridge { error ->
-      errorMessage = error
-    }
-  }
-
-  // React mount watchdog: check after 6 seconds if React has set window.__reactAppMounted = true
-  LaunchedEffect(isPageLoading) {
-    if (!isPageLoading) {
-      kotlinx.coroutines.delay(6000)
-      webView?.evaluateJavascript("window.__reactAppMounted") { value ->
-        if (value == null || value == "null" || value == "false" || value == "undefined") {
-          android.util.Log.w("NeuroLensWebView", "Watchdog triggered: React app failed to set window.__reactAppMounted")
-          errorMessage = "Watchdog Timeout: The web app loaded but failed to initialize. Your device's WebView may not support modern ES module scripts."
-        } else {
-          android.util.Log.i("NeuroLensWebView", "Watchdog passed: React app mounted (value: $value)")
-        }
-      }
-    }
-  }
-
-  // State to hold reference to upload file callback
-  var uploadMessageCallback: ValueCallback<Array<Uri>>? by remember { mutableStateOf(null) }
-
-  // File chooser activity launcher
-  val fileChooserLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.StartActivityForResult()
-  ) { result ->
-    val resultCode = result.resultCode
-    val data = result.data
-    val results = if (resultCode == Activity.RESULT_OK && data != null) {
-      WebChromeClient.FileChooserParams.parseResult(resultCode, data)
-    } else {
-      null
-    }
-    uploadMessageCallback?.onReceiveValue(results)
-    uploadMessageCallback = null
-  }
-
-  // Request permissions launcher for camera and recording audio on startup
-  val permissionsRequestLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.RequestMultiplePermissions()
-  ) { permissions ->
-    // Permissions are handled; user granted or denied. WebView request permissions will still trigger WebChromeClient.
-  }
-
-  // Request camera and microphone permissions when app starts
-  LaunchedEffect(Unit) {
-    permissionsRequestLauncher.launch(
-      arrayOf(
-        Manifest.permission.CAMERA,
-        Manifest.permission.RECORD_AUDIO
-      )
+    val context = LocalContext.current
+    val vm: MainScreenViewModel = viewModel(
+        factory = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(
+            context.applicationContext as android.app.Application
+        )
     )
-  }
+    val uiState by vm.uiState.collectAsStateWithLifecycle()
 
-  // Handle back button presses to navigate back inside WebView history if possible
-  BackHandler(enabled = webView?.canGoBack() == true) {
-    webView?.goBack()
-  }
+    // Dialog visibility state
+    var showSettings by remember { mutableStateOf(false) }
+    var showDocManager by remember { mutableStateOf(false) }
+    var citationSource by remember { mutableStateOf<RAGSource?>(null) }
 
-  Box(modifier = modifier.fillMaxSize()) {
-    AndroidView(
-      modifier = Modifier.fillMaxSize(),
-      factory = { context ->
-        val assetLoader = WebViewAssetLoader.Builder()
-          .addPathHandler("/assets/", AssetsPathHandler(context))
-          .build()
+    // Compose scroll state for chat
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
-        WebView(context).apply {
-          // Enable remote debugging of WebView via Chrome DevTools (chrome://inspect)
-          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
-            WebView.setWebContentsDebuggingEnabled(true)
-          }
+    // Query input state
+    var inputText by remember { mutableStateOf("") }
 
-          // Enable hardware acceleration
-          setLayerType(View.LAYER_TYPE_HARDWARE, null)
+    // Keep input in sync with STT transcription
+    LaunchedEffect(uiState.transcribedText) {
+        if (uiState.transcribedText.isNotEmpty()) {
+            inputText = uiState.transcribedText
+        }
+    }
 
-          // Enable cookie acceptance
-          CookieManager.getInstance().setAcceptCookie(true)
-          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-          }
-
-          webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(
-              view: WebView?,
-              request: WebResourceRequest?
-            ): WebResourceResponse? {
-              return request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+    // Auto-scroll to bottom when messages change
+    LaunchedEffect(uiState.messages.size) {
+        if (uiState.messages.isNotEmpty()) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(uiState.messages.size - 1)
             }
+        }
+    }
 
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-              super.onPageStarted(view, url, favicon)
-              injectErrorListener(view)
+    // STT Launcher
+    val sttLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        vm.setListening(false)
+        if (result.resultCode == Activity.RESULT_OK) {
+            val results = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val transcribed = results?.firstOrNull() ?: ""
+            if (transcribed.isNotBlank()) {
+                inputText = transcribed
+                vm.onTranscriptUpdate(transcribed)
             }
+        }
+    }
 
-            override fun onPageFinished(view: WebView?, url: String?) {
-              super.onPageFinished(view, url)
-              isPageLoading = false
-              injectErrorListener(view)
-            }
+    fun launchSpeechRecognition() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Say your question...")
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        try {
+            vm.setListening(true)
+            sttLauncher.launch(intent)
+        } catch (e: Exception) {
+            vm.setListening(false)
+        }
+    }
 
-            private fun injectErrorListener(view: WebView?) {
-              val js = """
-                (function() {
-                  if (window.__errorListenerInjected) return;
-                  window.__errorListenerInjected = true;
-                  
-                  // Catch unhandled runtime errors
-                  window.onerror = function(message, source, lineno, colno, error) {
-                    var errStr = message + '\nAt: ' + source + ':' + lineno + ':' + colno;
-                    if (window.AndroidBridge) {
-                      window.AndroidBridge.reportError(errStr);
+    // Bottom sheet scaffold state for documents
+    val scaffoldState = rememberBottomSheetScaffoldState()
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF060814))
+    ) {
+        // ── Layer 0: Animated Synapse background ──────────────────────────
+        SynapseBackground(modifier = Modifier.fillMaxSize())
+
+        // ── Layer 1: Full app scaffold ────────────────────────────────────
+        Column(modifier = Modifier.fillMaxSize()) {
+
+            // ── Top App Bar ───────────────────────────────────────────────
+            NeuroLensTopBar(
+                documents = uiState.documents,
+                backendReachable = uiState.backendReachable,
+                onSettingsClick = { showSettings = true },
+                onDocManagerClick = { showDocManager = true; vm.loadDocumentList() },
+                onClearChat = { vm.clearChat() }
+            )
+
+            // ── Chat message list ─────────────────────────────────────────
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                // Empty state
+                if (uiState.messages.isEmpty()) {
+                    item {
+                        EmptyStateView(
+                            hasDocuments = uiState.documents.isNotEmpty(),
+                            onDocManagerClick = { showDocManager = true; vm.loadDocumentList() }
+                        )
                     }
-                    return false;
-                  };
-                  
-                  // Catch unhandled promise rejections
-                  window.addEventListener('unhandledrejection', function(event) {
-                    var reason = event.reason;
-                    var errStr = 'Unhandled Rejection: ' + (reason && reason.stack ? reason.stack : reason);
-                    if (window.AndroidBridge) {
-                      window.AndroidBridge.reportError(errStr);
-                    }
-                  });
-                  
-                  console.log('JS error listeners injected successfully.');
-                })();
-              """.trimIndent()
-              view?.evaluateJavascript(js, null)
-            }
-
-            override fun onReceivedError(
-              view: WebView?,
-              request: WebResourceRequest?,
-              error: WebResourceError?
-            ) {
-              super.onReceivedError(view, request, error)
-              android.util.Log.e("NeuroLensWebView", "WebView Error: ${error?.description} (Code: ${error?.errorCode}) on URL: ${request?.url}")
-              if (request?.isForMainFrame == true) {
-                errorMessage = "Failed to load NeuroLens: ${error?.description} (Code: ${error?.errorCode})"
-                isPageLoading = false
-              }
-            }
-
-            override fun onReceivedHttpError(
-              view: WebView?,
-              request: WebResourceRequest?,
-              errorResponse: WebResourceResponse?
-            ) {
-              super.onReceivedHttpError(view, request, errorResponse)
-              android.util.Log.e("NeuroLensWebView", "HTTP Error: ${errorResponse?.statusCode} ${errorResponse?.reasonPhrase} on URL: ${request?.url}")
-              if (request?.isForMainFrame == true) {
-                errorMessage = "HTTP Error: ${errorResponse?.statusCode} ${errorResponse?.reasonPhrase}"
-                isPageLoading = false
-              }
-            }
-
-            override fun onReceivedSslError(
-              view: WebView?,
-              handler: SslErrorHandler?,
-              error: SslError?
-            ) {
-              android.util.Log.e("NeuroLensWebView", "SSL Error: ${error?.primaryError} on URL: ${error?.url}")
-              // Proceed through SSL certificates if needed for debug loads
-              handler?.proceed()
-            }
-
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-              val url = request?.url?.toString() ?: return false
-              // Force standard HTTP/HTTPS links to load inside WebView rather than opening external browser
-              if (url.startsWith("http://") || url.startsWith("https://")) {
-                return false
-              }
-              // Handle external protocols (tel, mailto, maps, market) using external activities
-              try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                context.startActivity(intent)
-              } catch (e: Exception) {
-                android.util.Log.e("NeuroLensWebView", "Could not start activity for custom protocol: $url", e)
-              }
-              return true
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-              if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
-                return false
-              }
-              try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                context.startActivity(intent)
-              } catch (e: Exception) {
-                android.util.Log.e("NeuroLensWebView", "Could not start activity for custom protocol: $url", e)
-              }
-              return true
-            }
-          }
-
-          webChromeClient = object : WebChromeClient() {
-            // Support camera/microphone inside web app
-            override fun onPermissionRequest(request: PermissionRequest?) {
-              if (request != null) {
-                // Grant all requested resources (camera, microphone)
-                request.grant(request.resources)
-              }
-            }
-
-            // Support JavaScript console messages redirection to Android Logcat
-            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-              if (consoleMessage != null) {
-                android.util.Log.d(
-                  "NeuroLensWebView",
-                  "${consoleMessage.message()} -- From line ${consoleMessage.lineNumber()} of ${consoleMessage.sourceId()}"
-                )
-              }
-              return super.onConsoleMessage(consoleMessage)
-            }
-
-            // Support file upload input tags
-            override fun onShowFileChooser(
-              webView: WebView?,
-              filePathCallback: ValueCallback<Array<Uri>>?,
-              fileChooserParams: FileChooserParams?
-            ): Boolean {
-              // Cancel any existing callback
-              uploadMessageCallback?.onReceiveValue(null)
-              uploadMessageCallback = filePathCallback
-
-              try {
-                val intent = fileChooserParams?.createIntent()
-                if (intent != null) {
-                  fileChooserLauncher.launch(intent)
-                } else {
-                  uploadMessageCallback?.onReceiveValue(null)
-                  uploadMessageCallback = null
-                  return false
                 }
-              } catch (e: Exception) {
-                uploadMessageCallback?.onReceiveValue(null)
-                uploadMessageCallback = null
-                return false
-              }
-              return true
+
+                items(uiState.messages, key = { it.id }) { message ->
+                    MessageBubble(
+                        message = message,
+                        onCitationClick = { idx ->
+                            citationSource = message.sources.getOrNull(idx)
+                        },
+                        onSpeakClick = { vm.toggleTts(message) }
+                    )
+                }
+
+                // Generating indicator
+                if (uiState.isGenerating) {
+                    item { ThinkingIndicator() }
+                }
             }
-          }
 
-          // Configure standard WebView settings for modern React applications
-          // Clear cache on startup to prevent loading stale cached assets
-          clearCache(true)
-
-          // Configure standard WebView settings for modern React applications
-          settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
-            allowFileAccess = true
-            allowContentAccess = true
-            allowFileAccessFromFileURLs = true
-            allowUniversalAccessFromFileURLs = true
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            mediaPlaybackRequiresUserGesture = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-
-            // Force WebView to skip caching to ensure new legacy bundles are loaded
-            cacheMode = WebSettings.LOAD_NO_CACHE
-
-            // Set browser user-agent to bypass any mobile browser restriction checks
-            userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-
-            // Allow JS to open windows automatically
-            javaScriptCanOpenWindowsAutomatically = true
-            loadsImagesAutomatically = true
-          }
-
-          // Add Javascript interface
-          addJavascriptInterface(jsBridge, "AndroidBridge")
-
-          loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
-          webView = this
+            // ── Input Row ─────────────────────────────────────────────────
+            InputRow(
+                inputText = inputText,
+                onInputChange = {
+                    inputText = it
+                    vm.clearTranscript()
+                },
+                onSend = {
+                    if (inputText.isNotBlank() && !uiState.isGenerating) {
+                        vm.sendQuery(inputText)
+                        inputText = ""
+                    }
+                },
+                onMicClick = { launchSpeechRecognition() },
+                isGenerating = uiState.isGenerating,
+                isListening = uiState.isListening
+            )
         }
-      },
-      update = {
-        // Managed via factory/BackHandler
-      }
-    )
 
-    if (isPageLoading) {
-      CircularProgressIndicator(
-        modifier = Modifier.align(Alignment.Center),
-        color = Color(0xFF00F5D4)
-      )
+        // ── Error snackbar overlay ────────────────────────────────────────
+        uiState.errorMessage?.let { msg ->
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                action = {
+                    TextButton(onClick = { vm.dismissError() }) {
+                        Text("Dismiss", color = Color(0xFF00F5D4))
+                    }
+                },
+                containerColor = Color(0xFF1E0A2E),
+                contentColor = Color.White
+            ) {
+                Text(msg, maxLines = 3)
+            }
+        }
     }
 
-    if (errorMessage != null) {
-      Column(
-        modifier = Modifier
-          .fillMaxSize()
-          .background(Color(0xFF060814))
-          .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-      ) {
-        Text(
-          text = "Connection Error",
-          style = MaterialTheme.typography.titleLarge,
-          color = Color.White
+    // ── Dialogs ───────────────────────────────────────────────────────────────
+
+    if (showSettings) {
+        SettingsDialog(
+            currentSettings = uiState.settings,
+            onDismiss = { showSettings = false },
+            onSave = { newSettings ->
+                vm.saveSettings(newSettings)
+                showSettings = false
+            }
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-          text = errorMessage!!,
-          style = MaterialTheme.typography.bodyMedium,
-          color = Color.Gray,
-          textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-          onClick = {
-            errorMessage = null
-            isPageLoading = true
-            webView?.reload()
-          },
-          colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF00F5D4),
-            contentColor = Color.Black
-          )
-        ) {
-          Text("Retry")
-        }
-      }
     }
-  }
+
+    if (showDocManager) {
+        DocumentManagerDialog(
+            documents = uiState.documents,
+            onUploadFiles = { uris -> vm.uploadFiles(uris) },
+            onFetchUrl = { url -> vm.fetchUrl(url) },
+            onClearDatabase = { vm.clearDatabase() },
+            onDismiss = { showDocManager = false },
+            isUploading = uiState.isUploading,
+            isFetching = uiState.isFetchingUrl
+        )
+    }
+
+    citationSource?.let { source ->
+        CitationDetailDialog(
+            source = source,
+            onDismiss = { citationSource = null }
+        )
+    }
 }
 
-class JSBridge(private val onError: (String) -> Unit) {
-  private val handler = Handler(Looper.getMainLooper())
+// ── Top App Bar ────────────────────────────────────────────────────────────────
 
-  @JavascriptInterface
-  fun reportError(message: String) {
-    handler.post {
-      onError(message)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NeuroLensTopBar(
+    documents: List<String>,
+    backendReachable: Boolean?,
+    onSettingsClick: () -> Unit,
+    onDocManagerClick: () -> Unit,
+    onClearChat: () -> Unit
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "logo_glow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow_alpha"
+    )
+
+    val statusColor = when (backendReachable) {
+        true -> Color(0xFF4ADE80)  // Green
+        false -> Color(0xFFEF4444) // Red
+        null -> Color(0xFFFBBF24)  // Amber – unknown
     }
-  }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xCC0A0F1E), Color(0x000A0F1E))
+                )
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // NL Logo / Brand
+        Text(
+            text = "NeuroLens",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color(0xFF00F5D4).copy(alpha = glowAlpha),
+            modifier = Modifier.shadow(
+                elevation = 8.dp,
+                ambientColor = Color(0xFF00F5D4).copy(alpha = 0.4f),
+                spotColor = Color(0xFF00F5D4).copy(alpha = 0.4f)
+            )
+        )
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Backend status indicator
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(statusColor, CircleShape)
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Document count badge
+        if (documents.isNotEmpty()) {
+            Card(
+                onClick = onDocManagerClick,
+                colors = CardDefaults.cardColors(containerColor = Color(0x2200F5D4)),
+                border = BorderStroke(1.dp, Color(0x6600F5D4)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Folder,
+                        contentDescription = "Documents",
+                        tint = Color(0xFF00F5D4),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "${documents.size}",
+                        color = Color(0xFF00F5D4),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // Action icons
+        IconButton(onClick = onDocManagerClick, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Default.UploadFile, contentDescription = "Documents", tint = Color(0xFF9D4EDD))
+        }
+        IconButton(onClick = onClearChat, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Default.RestartAlt, contentDescription = "Clear Chat", tint = Color.Gray)
+        }
+        IconButton(onClick = onSettingsClick, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF00F5D4))
+        }
+    }
+    HorizontalDivider(color = Color(0xFF1A2540), thickness = 1.dp)
+}
+
+// ── Empty State View ───────────────────────────────────────────────────────────
+
+@Composable
+private fun EmptyStateView(
+    hasDocuments: Boolean,
+    onDocManagerClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Animated pulsating ring
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+        val scale by infiniteTransition.animateFloat(
+            initialValue = 0.85f,
+            targetValue = 1.15f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2000, easing = EaseInOutSine),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scale"
+        )
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 0.9f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2000, easing = EaseInOutSine),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "alpha"
+        )
+
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .scale(scale)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFF00F5D4).copy(alpha = alpha * 0.15f),
+                                Color.Transparent
+                            )
+                        ),
+                        CircleShape
+                    )
+            )
+            Icon(
+                imageVector = Icons.Default.Psychology,
+                contentDescription = "Brain",
+                tint = Color(0xFF00F5D4).copy(alpha = alpha),
+                modifier = Modifier.size(48.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Text(
+            text = "NeuroLens",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "AI-Powered Knowledge Retrieval Engine",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF9D4EDD),
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+
+        if (!hasDocuments) {
+            Text(
+                text = "Upload documents or paste a URL\nto start semantic search",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onDocManagerClick,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F5D4))
+            ) {
+                Icon(Icons.Default.Upload, contentDescription = null, tint = Color.Black)
+                Spacer(Modifier.width(8.dp))
+                Text("Open Document Library", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        } else {
+            Text(
+                text = "Documents loaded. Ask me anything.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+// ── Thinking Indicator ─────────────────────────────────────────────────────────
+
+@Composable
+private fun ThinkingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "dots")
+    Row(
+        modifier = Modifier
+            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp)
+            .background(Color(0x1F00F5D4), RoundedCornerShape(12.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(3) { idx ->
+            val yOffset by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = -6f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(400, delayMillis = idx * 120, easing = EaseInOutSine),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dot_$idx"
+            )
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .offset(y = yOffset.dp)
+                    .background(Color(0xFF00F5D4), CircleShape)
+            )
+            if (idx < 2) Spacer(Modifier.width(5.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "Thinking…",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF00F5D4).copy(alpha = 0.75f)
+        )
+    }
+}
+
+// ── Input Row ──────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InputRow(
+    inputText: String,
+    onInputChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onMicClick: () -> Unit,
+    isGenerating: Boolean,
+    isListening: Boolean
+) {
+    val micColor by animateColorAsState(
+        targetValue = if (isListening) Color(0xFFEF4444) else Color(0xFF9D4EDD),
+        animationSpec = tween(300),
+        label = "mic_color"
+    )
+
+    Surface(
+        color = Color(0xCC070C1A),
+        tonalElevation = 0.dp,
+        shadowElevation = 8.dp
+    ) {
+        Column(modifier = Modifier.navigationBarsPadding()) {
+            HorizontalDivider(color = Color(0xFF1A2540), thickness = 1.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = onInputChange,
+                    placeholder = {
+                        Text(
+                            if (isListening) "Listening…" else "Ask anything…",
+                            color = Color.Gray
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 4,
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0x22FFFFFF),
+                        unfocusedContainerColor = Color(0x11FFFFFF),
+                        focusedIndicatorColor = Color(0xFF00F5D4),
+                        unfocusedIndicatorColor = Color(0x33FFFFFF),
+                        cursorColor = Color(0xFF00F5D4)
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = { onSend() }
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send)
+                )
+
+                Spacer(Modifier.width(8.dp))
+
+                // Mic button
+                IconButton(
+                    onClick = onMicClick,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .background(micColor.copy(alpha = 0.15f), CircleShape)
+                        .border(1.dp, micColor.copy(alpha = 0.4f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                        contentDescription = "Voice Input",
+                        tint = micColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // Send button
+                val sendColor = if (inputText.isNotBlank() && !isGenerating) Color(0xFF00F5D4) else Color(0xFF2A3550)
+                IconButton(
+                    onClick = onSend,
+                    enabled = inputText.isNotBlank() && !isGenerating,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .background(sendColor, CircleShape)
+                ) {
+                    if (isGenerating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            tint = if (inputText.isNotBlank()) Color.Black else Color.Gray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

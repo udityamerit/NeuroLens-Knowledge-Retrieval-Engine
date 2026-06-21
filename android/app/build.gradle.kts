@@ -82,6 +82,14 @@ dependencies {
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
-  // WebKit support for WebViewAssetLoader
-  implementation("androidx.webkit:webkit:1.12.0")
+  // Material Icons Extended (Psychology, UploadFile, RestartAlt, etc.)
+  implementation("androidx.compose.material:material-icons-extended")
+
+  // Retrofit & Networking
+  implementation(libs.retrofit)
+  implementation(libs.retrofit.converter.gson)
+  implementation(libs.okhttp.logging)
+
+  // Kotlinx Serialization JSON
+  implementation(libs.kotlinx.serialization.json)
 }

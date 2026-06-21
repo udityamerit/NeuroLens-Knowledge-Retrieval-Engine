@@ -1,50 +1,38 @@
 package com.example.neurolens.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 
-private val DarkColorScheme = darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
-
-private val LightColorScheme =
-  lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
+// NeuroLens sci-fi cyber dark theme
+private val NeuroLensDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF00F5D4),          // Teal/Cyan
+    onPrimary = Color(0xFF060814),
+    primaryContainer = Color(0xFF003D35),
+    onPrimaryContainer = Color(0xFF00F5D4),
+    secondary = Color(0xFF9D4EDD),         // Electric Violet
     onSecondary = Color.White,
+    secondaryContainer = Color(0xFF2A0060),
+    onSecondaryContainer = Color(0xFFD9B3FF),
+    tertiary = Color(0xFF3A86FF),          // Electric Blue
     onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
-  )
+    background = Color(0xFF060814),        // Deep space black
+    onBackground = Color(0xFFE2E8F0),
+    surface = Color(0xFF0D1124),           // Deep navy card
+    onSurface = Color(0xFFE2E8F0),
+    surfaceVariant = Color(0xFF1A2540),
+    onSurfaceVariant = Color(0xFF94A3B8),
+    outline = Color(0xFF2A3550),
+    error = Color(0xFFEF4444),
+    onError = Color.White
+)
 
 @Composable
-fun NeuroLensTheme(
-  darkTheme: Boolean = isSystemInDarkTheme(),
-  // Dynamic color is available on Android 12+
-  dynamicColor: Boolean = true,
-  content: @Composable () -> Unit,
-) {
-  val colorScheme =
-    when {
-      dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-        val context = LocalContext.current
-        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-      }
-      darkTheme -> DarkColorScheme
-      else -> LightColorScheme
-    }
-
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+fun NeuroLensTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = NeuroLensDarkColorScheme,
+        typography = Typography,
+        content = content
+    )
 }
