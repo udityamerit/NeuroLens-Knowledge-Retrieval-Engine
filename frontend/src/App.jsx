@@ -5,6 +5,7 @@ import SettingsModal from './components/SettingsModal';
 import AuthorModal from './components/AuthorModal';
 import CameraModal from './components/CameraModal';
 import DocPreviewModal from './components/DocPreviewModal';
+import { safeStorage } from './utils/storage';
 
 // --- Client-Side RAG Helper Functions ---
 
@@ -344,6 +345,11 @@ export default function App() {
     };
     handleResize();
     window.addEventListener('resize', handleResize);
+    
+    // Set mount flag for Android client verification
+    window.__reactAppMounted = true;
+    console.log("NeuroLens React app successfully mounted");
+    
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
@@ -352,19 +358,19 @@ export default function App() {
     const provider = 'groq';
     return {
       provider,
-      apiKey: localStorage.getItem(`neurolens_key_${provider}`) || '',
+      apiKey: safeStorage.getItem(`neurolens_key_${provider}`) || '',
       modelName: 'llama-3.3-70b-versatile',
       temperature: 0.3,
       k: 5,
-      backendUrl: localStorage.getItem('neurolens_backend_url') || '',
-      elevenLabsApiKey: localStorage.getItem('neurolens_key_elevenlabs') || ''
+      backendUrl: safeStorage.getItem('neurolens_backend_url') || '',
+      elevenLabsApiKey: safeStorage.getItem('neurolens_key_elevenlabs') || ''
     };
   });
 
   // Load documents and chunks from session storage or local storage if desired
   useEffect(() => {
-    const storedDocs = localStorage.getItem('neurolens_docs');
-    const storedChunks = localStorage.getItem('neurolens_chunks');
+    const storedDocs = safeStorage.getItem('neurolens_docs');
+    const storedChunks = safeStorage.getItem('neurolens_chunks');
     if (storedDocs && storedChunks) {
       try {
         setDocuments(JSON.parse(storedDocs));
@@ -461,8 +467,8 @@ export default function App() {
       setAllChunks(updatedChunks);
 
       // Persist documents in localStorage
-      localStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
-      localStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+      safeStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
+      safeStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
 
       setMessages(prev => [
         ...prev,
@@ -636,8 +642,8 @@ export default function App() {
       setAllChunks(updatedChunks);
 
       // Persist
-      localStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
-      localStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+      safeStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
+      safeStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
 
       setMessages(prev => [
         ...prev,
@@ -811,8 +817,8 @@ export default function App() {
     setDocuments([]);
     setAllChunks([]);
     setMessages([]);
-    localStorage.removeItem('neurolens_docs');
-    localStorage.removeItem('neurolens_chunks');
+    safeStorage.removeItem('neurolens_docs');
+    safeStorage.removeItem('neurolens_chunks');
   };
 
   const handleDeleteDocument = (docName) => {
@@ -825,8 +831,8 @@ export default function App() {
     setDocuments(updatedDocs);
     setAllChunks(updatedChunks);
 
-    localStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
-    localStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+    safeStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
+    safeStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
 
     setMessages(prev => [
       ...prev,

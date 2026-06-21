@@ -7,8 +7,11 @@ import android.content.Intent
 import android.net.Uri
 import android.net.http.SslError
 import android.view.View
+import android.os.Handler
+import android.os.Looper
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
@@ -58,6 +61,28 @@ fun MainScreen(
   var webView: WebView? by remember { mutableStateOf(null) }
   var isPageLoading by remember { mutableStateOf(true) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  // Add Javascript Interface
+  val jsBridge = remember {
+    JSBridge { error ->
+      errorMessage = error
+    }
+  }
+
+  // React mount watchdog: check after 6 seconds if React has set window.__reactAppMounted = true
+  LaunchedEffect(isPageLoading) {
+    if (!isPageLoading) {
+      kotlinx.coroutines.delay(6000)
+      webView?.evaluateJavascript("window.__reactAppMounted") { value ->
+        if (value == null || value == "null" || value == "false") {
+          android.util.Log.w("NeuroLensWebView", "Watchdog triggered: React app failed to set window.__reactAppMounted")
+          errorMessage = "Watchdog Timeout: The web app loaded but failed to initialize. Your device's WebView may not support modern ES module scripts."
+        } else {
+          android.util.Log.i("NeuroLensWebView", "Watchdog passed: React app mounted (value: $value)")
+        }
+      }
+    }
+  }
 
   // State to hold reference to upload file callback
   var uploadMessageCallback: ValueCallback<Array<Uri>>? by remember { mutableStateOf(null) }
@@ -119,9 +144,45 @@ fun MainScreen(
           }
 
           webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+              super.onPageStarted(view, url, favicon)
+              injectErrorListener(view)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
               super.onPageFinished(view, url)
               isPageLoading = false
+              injectErrorListener(view)
+            }
+
+            private fun injectErrorListener(view: WebView?) {
+              val js = """
+                (function() {
+                  if (window.__errorListenerInjected) return;
+                  window.__errorListenerInjected = true;
+                  
+                  // Catch unhandled runtime errors
+                  window.onerror = function(message, source, lineno, colno, error) {
+                    var errStr = message + '\nAt: ' + source + ':' + lineno + ':' + colno;
+                    if (window.AndroidBridge) {
+                      window.AndroidBridge.reportError(errStr);
+                    }
+                    return false;
+                  };
+                  
+                  // Catch unhandled promise rejections
+                  window.addEventListener('unhandledrejection', function(event) {
+                    var reason = event.reason;
+                    var errStr = 'Unhandled Rejection: ' + (reason && reason.stack ? reason.stack : reason);
+                    if (window.AndroidBridge) {
+                      window.AndroidBridge.reportError(errStr);
+                    }
+                  });
+                  
+                  console.log('JS error listeners injected successfully.');
+                })();
+              """.trimIndent()
+              view?.evaluateJavascript(js, null)
             }
 
             override fun onReceivedError(
@@ -259,6 +320,9 @@ fun MainScreen(
             loadsImagesAutomatically = true
           }
 
+          // Add Javascript interface
+          addJavascriptInterface(jsBridge, "AndroidBridge")
+
           loadUrl("https://udityamerit.github.io/NeuroLens-Knowledge-Retrieval-Engine/")
           webView = this
         }
@@ -310,6 +374,17 @@ fun MainScreen(
           Text("Retry")
         }
       }
+    }
+  }
+}
+
+class JSBridge(private val onError: (String) -> Unit) {
+  private val handler = Handler(Looper.getMainLooper())
+
+  @JavascriptInterface
+  fun reportError(message: String) {
+    handler.post {
+      onError(message)
     }
   }
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { safeStorage } from '../utils/storage';
 
 const PROVIDERS = {
   groq: {
@@ -32,9 +33,9 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
 
   // Load API keys stored in localStorage for convenience
   const [savedKeys, setSavedKeys] = useState({
-    groq: localStorage.getItem('neurolens_key_groq') || '',
-    openai: localStorage.getItem('neurolens_key_openai') || '',
-    huggingface: localStorage.getItem('neurolens_key_huggingface') || ''
+    groq: safeStorage.getItem('neurolens_key_groq') || '',
+    openai: safeStorage.getItem('neurolens_key_openai') || '',
+    huggingface: safeStorage.getItem('neurolens_key_huggingface') || ''
   });
 
   // Whenever provider changes, update the model list and modelName
@@ -56,7 +57,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
 
   const handleSave = () => {
     // Save to local storage for convenience
-    localStorage.setItem(`neurolens_key_${provider}`, apiKey);
+    safeStorage.setItem(`neurolens_key_${provider}`, apiKey);
     
     onSave({
       provider,
