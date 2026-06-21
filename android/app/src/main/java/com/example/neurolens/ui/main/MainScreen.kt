@@ -22,6 +22,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewAssetLoader.AssetsPathHandler
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -128,6 +130,10 @@ fun MainScreen(
     AndroidView(
       modifier = Modifier.fillMaxSize(),
       factory = { context ->
+        val assetLoader = WebViewAssetLoader.Builder()
+          .addPathHandler("/assets/", AssetsPathHandler(context))
+          .build()
+
         WebView(context).apply {
           // Enable remote debugging of WebView via Chrome DevTools (chrome://inspect)
           if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
@@ -144,6 +150,13 @@ fun MainScreen(
           }
 
           webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+              view: WebView?,
+              request: WebResourceRequest?
+            ): WebResourceResponse? {
+              return request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+            }
+
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
               super.onPageStarted(view, url, favicon)
               injectErrorListener(view)
@@ -332,7 +345,7 @@ fun MainScreen(
           // Add Javascript interface
           addJavascriptInterface(jsBridge, "AndroidBridge")
 
-          loadUrl("file:///android_asset/www/index.html")
+          loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
           webView = this
         }
       },

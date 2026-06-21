@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.neurolens"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1-standalone"
     }
 
     buildTypes {
@@ -81,4 +81,7 @@ dependencies {
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  // WebKit support for WebViewAssetLoader
+  implementation("androidx.webkit:webkit:1.12.0")
 }
