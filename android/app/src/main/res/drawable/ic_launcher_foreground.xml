@@ -1,0 +1,116 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:scaleX="0.65"
+        android:scaleY="0.65"
+        android:translateX="21.5"
+        android:translateY="21.5">
+
+        <!-- Radial Glow Backdrop -->
+        <path
+            android:pathData="M 50,10 a 40,40 0 1,0 0,80 a 40,40 0 1,0 0,-80"
+            android:fillType="nonZero">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="radial"
+                    android:centerX="50"
+                    android:centerY="50"
+                    android:gradientRadius="40">
+                    <item android:offset="0.0" android:color="#5900f5d4" />
+                    <item android:offset="1.0" android:color="#009d4edd" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Outer Tech Ring -->
+        <path
+            android:pathData="M 50,8 a 42,42 0 1,0 0,84 a 42,42 0 1,0 0,-84"
+            android:strokeWidth="3">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="0"
+                    android:startY="0"
+                    android:endX="100"
+                    android:endY="100">
+                    <item android:offset="0.0" android:color="#9d4edd"/>
+                    <item android:offset="1.0" android:color="#00f5d4"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Inner Aperture Circle -->
+        <path
+            android:pathData="M 50,24 a 26,26 0 1,0 0,52 a 26,26 0 1,0 0,-52"
+            android:strokeWidth="1.5">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="0"
+                    android:startY="0"
+                    android:endX="100"
+                    android:endY="100">
+                    <item android:offset="0.0" android:color="#9d4edd"/>
+                    <item android:offset="1.0" android:color="#00f5d4"/>
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Neural Network Connections (Solid Lines) -->
+        <path
+            android:pathData="M 50,50 L 28,35"
+            android:strokeColor="#BF9D4EDD"
+            android:strokeWidth="1.5" />
+        <path
+            android:pathData="M 50,50 L 72,35"
+            android:strokeColor="#BF9D4EDD"
+            android:strokeWidth="1.5" />
+        <path
+            android:pathData="M 50,50 L 35,70"
+            android:strokeColor="#BF00F5D4"
+            android:strokeWidth="1.5" />
+        <path
+            android:pathData="M 50,50 L 65,70"
+            android:strokeColor="#BF00F5D4"
+            android:strokeWidth="1.5" />
+
+        <!-- Neural Network Connections (Solid Linking Lines) -->
+        <path
+            android:pathData="M 28,35 L 72,35"
+            android:strokeColor="#739D4EDD"
+            android:strokeWidth="1.0" />
+        <path
+            android:pathData="M 35,70 L 65,70"
+            android:strokeColor="#7300F5D4"
+            android:strokeWidth="1.0" />
+
+        <!-- Neural Network Nodes (Circles) -->
+        <!-- Center Iris -->
+        <path
+            android:pathData="M 50,42 a 8,8 0 1,0 0,16 a 8,8 0 1,0 0,-16"
+            android:fillColor="#00f5d4" />
+        <!-- Top Left Node -->
+        <path
+            android:pathData="M 28,31 a 4,4 0 1,0 0,8 a 4,4 0 1,0 0,-8"
+            android:fillColor="#9d4edd" />
+        <!-- Top Right Node -->
+        <path
+            android:pathData="M 72,31 a 4,4 0 1,0 0,8 a 4,4 0 1,0 0,-8"
+            android:fillColor="#9d4edd" />
+        <!-- Bottom Left Node -->
+        <path
+            android:pathData="M 35,66 a 4,4 0 1,0 0,8 a 4,4 0 1,0 0,-8"
+            android:fillColor="#00f5d4" />
+        <!-- Bottom Right Node -->
+        <path
+            android:pathData="M 65,66 a 4,4 0 1,0 0,8 a 4,4 0 1,0 0,-8"
+            android:fillColor="#00f5d4" />
+
+    </group>
+
+</vector>
