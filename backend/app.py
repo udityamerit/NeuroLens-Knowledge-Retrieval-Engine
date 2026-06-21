@@ -198,6 +198,72 @@ async def text_to_speech(request: TTSRequest):
                 pass
         raise HTTPException(status_code=500, detail=f"ElevenLabs TTS Error: {error_details}")
 
+class FetchUrlRequest(BaseModel):
+    url: str
+
+@app.post("/api/fetch-url")
+async def fetch_url_content(request: FetchUrlRequest):
+    """Fetches a web page URL, extracts clean readable text using BeautifulSoup, and returns it."""
+    import requests
+    from bs4 import BeautifulSoup
+
+    url = request.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL cannot be empty.")
+
+    # Basic URL validation
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        response.raise_for_status()
+
+        content_type = response.headers.get("Content-Type", "")
+        if "text/html" not in content_type and "text/plain" not in content_type:
+            raise HTTPException(status_code=400, detail=f"Unsupported content type: {content_type}. Only HTML and plain text pages are supported.")
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Extract page title
+        title = soup.title.string.strip() if soup.title and soup.title.string else url
+
+        # Remove non-content elements
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form", "iframe", "noscript", "svg", "img", "video", "audio"]):
+            tag.decompose()
+
+        # Extract clean text
+        text = soup.get_text(separator="\n", strip=True)
+
+        # Clean up excessive whitespace and blank lines
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        clean_text = "\n".join(lines)
+
+        if not clean_text:
+            raise HTTPException(status_code=400, detail="No readable text content found on this page.")
+
+        print(f"🌐 Fetched URL: {url} — Title: '{title}' — {len(clean_text)} chars extracted.")
+
+        return {
+            "title": title,
+            "content": clean_text,
+            "url": url
+        }
+
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=408, detail="Request timed out. The page took too long to respond.")
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(status_code=502, detail="Could not connect to the URL. Please check the address.")
+    except requests.exceptions.HTTPError as he:
+        raise HTTPException(status_code=he.response.status_code if he.response else 500, detail=f"HTTP error fetching URL: {str(he)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching URL content: {str(e)}")
+
 @app.get("/api/documents")
 async def get_documents():
     """Lists all currently indexed document filenames."""

@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 import Logo from './Logo';
 
-export default function Sidebar({ documents, onUpload, onClear, onOpenSettings, onOpenAuthor, isUploading }) {
+export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSettings, onDeleteDocument, isUploading, isFetchingUrl }) {
   const [isDragActive, setIsDragActive] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef(null);
 
   const handleDrag = (e) => {
@@ -35,7 +36,34 @@ export default function Sidebar({ documents, onUpload, onClear, onOpenSettings, 
     fileInputRef.current.click();
   };
 
+  const handleUrlSubmit = (e) => {
+    e.preventDefault();
+    const url = urlInput.trim();
+    if (!url) return;
+    
+    // Basic URL validation
+    if (!url.startsWith('http://') && !url.startsWith('https://') && !url.includes('.')) {
+      alert('Please enter a valid URL (e.g., https://example.com)');
+      return;
+    }
+
+    const fullUrl = (!url.startsWith('http://') && !url.startsWith('https://')) ? `https://${url}` : url;
+    onFetchUrl(fullUrl);
+    setUrlInput('');
+  };
+
   const getFileIcon = (filename) => {
+    // Check if this is a URL source (starts with globe emoji)
+    if (filename.startsWith('🌐')) {
+      return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+      );
+    }
+
     const ext = filename.split('.').pop().toLowerCase();
     if (ext === 'pdf') {
       return (
@@ -120,6 +148,51 @@ export default function Sidebar({ documents, onUpload, onClear, onOpenSettings, 
         )}
       </div>
 
+      {/* URL Fetch Section */}
+      <form onSubmit={handleUrlSubmit} style={styles.urlSection}>
+        <div style={styles.urlHeader}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+          <span style={styles.urlLabel}>Add from URL</span>
+        </div>
+        <div style={styles.urlInputRow}>
+          <input
+            type="text"
+            placeholder="Paste a webpage URL..."
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            disabled={isFetchingUrl}
+            style={styles.urlInput}
+          />
+          <button
+            type="submit"
+            disabled={isFetchingUrl || !urlInput.trim()}
+            style={{
+              ...styles.urlFetchBtn,
+              opacity: (isFetchingUrl || !urlInput.trim()) ? 0.4 : 1,
+              cursor: (isFetchingUrl || !urlInput.trim()) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isFetchingUrl ? (
+              <div style={styles.urlSpinner} className="animate-spin" />
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                <polyline points="22 4 12 12 9 9" />
+              </svg>
+            )}
+          </button>
+        </div>
+        {isFetchingUrl && (
+          <p style={styles.urlFetchingText} className="animate-fade-in">
+            Fetching & parsing web content...
+          </p>
+        )}
+      </form>
+
       {/* Document Registry List */}
       <div style={styles.docsSection}>
         <div style={styles.sectionHeader}>
@@ -140,7 +213,7 @@ export default function Sidebar({ documents, onUpload, onClear, onOpenSettings, 
             documents.map((doc, idx) => (
               <div 
                 key={idx} 
-                className="animate-fade-in"
+                className="animate-fade-in doc-card-item"
                 style={{
                   ...styles.docCard,
                   animationDelay: `${idx * 0.05}s`
@@ -152,10 +225,29 @@ export default function Sidebar({ documents, onUpload, onClear, onOpenSettings, 
                 <div style={styles.docInfo}>
                   <p style={styles.docName} title={doc}>{doc}</p>
                   <div style={styles.docStatusRow}>
-                    <span style={styles.statusDot} />
-                    <span style={styles.statusText}>Indexed</span>
+                    <span style={{
+                      ...styles.statusDot,
+                      background: doc.startsWith('🌐') ? '#38bdf8' : 'var(--color-secondary)',
+                      boxShadow: doc.startsWith('🌐') ? '0 0 6px #38bdf8' : '0 0 6px var(--color-secondary)'
+                    }} />
+                    <span style={styles.statusText}>{doc.startsWith('🌐') ? 'URL Indexed' : 'Indexed'}</span>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteDocument(doc);
+                  }}
+                  className="doc-delete-btn"
+                  style={styles.deleteDocBtn}
+                  title="Remove this source"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
               </div>
             ))
           )}
@@ -164,57 +256,36 @@ export default function Sidebar({ documents, onUpload, onClear, onOpenSettings, 
 
       {/* Bottom Controls */}
       <div style={styles.bottomSection}>
-        <button 
-          onClick={onOpenSettings} 
-          className="sidebar-settings-btn"
-          style={styles.settingsBtn}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-          LLM Settings
-        </button>
-
-        <button 
-          onClick={onOpenAuthor} 
-          className="sidebar-author-btn"
-          style={styles.authorBtn}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
-          Meet the Author
-        </button>
-
-        <a 
-          href="https://github.com/udityamerit/NeuroLens-Knowledge-Retrieval-Engine" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="repo-link-btn"
-          style={styles.repoBtn}
-          title="Open project source code on GitHub"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-          </svg>
-          GitHub Repository
-        </a>
-
-        {documents.length > 0 && (
-          <button 
-            onClick={onClear} 
-            className="sidebar-clear-btn"
-            style={styles.clearBtn}
+        <div style={styles.controlsRow}>
+          {/* Groq Free API Banner */}
+          <div
+            style={styles.groqBannerCompact}
+            className="groq-free-banner"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <div style={styles.groqBannerInner}>
+              <div style={styles.groqBadgeRow}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                <span style={styles.groqBannerTitleCompact}>Groq API</span>
+                <span style={styles.freeBadgeCompact}>FREE</span>
+              </div>
+              <span style={styles.groqBannerSubCompact}>Free model execution</span>
+            </div>
+          </div>
+
+          <button 
+            onClick={onOpenSettings} 
+            className="sidebar-settings-icon-btn"
+            style={styles.settingsIconBtn}
+            title="Open LLM & System Settings"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            Clear Database
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -243,7 +314,7 @@ const styles = {
     textAlign: 'center',
     cursor: 'pointer',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    marginBottom: '24px'
+    marginBottom: '12px'
   },
   uploadInner: {
     display: 'flex',
@@ -262,6 +333,73 @@ const styles = {
     fontSize: '11px',
     color: 'var(--text-muted)'
   },
+  // URL Section styles
+  urlSection: {
+    marginBottom: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  urlHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    paddingLeft: '2px'
+  },
+  urlLabel: {
+    fontFamily: 'var(--font-heading)',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#38bdf8',
+    letterSpacing: '0.3px'
+  },
+  urlInputRow: {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'center'
+  },
+  urlInput: {
+    flex: 1,
+    padding: '10px 12px',
+    borderRadius: '8px',
+    background: 'rgba(2, 3, 9, 0.5)',
+    border: '1px solid rgba(56, 189, 248, 0.15)',
+    color: '#ffffff',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '12px',
+    outline: 'none',
+    transition: 'border-color 0.2s, box-shadow 0.2s',
+    width: '100%',
+    minWidth: 0
+  },
+  urlFetchBtn: {
+    padding: '10px 12px',
+    borderRadius: '8px',
+    background: 'rgba(56, 189, 248, 0.12)',
+    border: '1px solid rgba(56, 189, 248, 0.25)',
+    color: '#38bdf8',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s',
+    flexShrink: 0
+  },
+  urlSpinner: {
+    width: '14px',
+    height: '14px',
+    border: '2px solid rgba(56, 189, 248, 0.2)',
+    borderTopColor: '#38bdf8',
+    borderRadius: '50%'
+  },
+  urlFetchingText: {
+    fontSize: '10px',
+    color: '#38bdf8',
+    fontStyle: 'italic',
+    paddingLeft: '2px',
+    margin: 0
+  },
+  // Documents section
   docsSection: {
     flex: 1,
     display: 'flex',
@@ -321,6 +459,20 @@ const styles = {
     padding: '10px 12px',
     transition: 'all 0.2s'
   },
+  deleteDocBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    padding: '6px',
+    borderRadius: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s',
+    opacity: 0,
+    flexShrink: 0
+  },
   docIcon: {
     display: 'flex',
     alignItems: 'center',
@@ -355,81 +507,86 @@ const styles = {
     fontSize: '9px',
     color: 'var(--text-muted)'
   },
+  // Groq Banner
+  groqBannerCompact: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    background: 'rgba(34, 197, 94, 0.04)',
+    border: '1px solid rgba(34, 197, 94, 0.15)',
+    borderRadius: '10px',
+    padding: '8px 12px',
+    minWidth: 0
+  },
+  groqBannerInner: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    width: '100%',
+    minWidth: 0
+  },
+  groqBadgeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    width: '100%'
+  },
+  groqBannerTitleCompact: {
+    fontFamily: 'var(--font-heading)',
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#e2e8f0',
+    letterSpacing: '0.3px',
+    whiteSpace: 'nowrap'
+  },
+  freeBadgeCompact: {
+    fontSize: '8px',
+    fontWeight: '800',
+    color: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.15)',
+    border: '1px solid rgba(34, 197, 94, 0.3)',
+    padding: '1px 5px',
+    borderRadius: '3px',
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+    boxShadow: '0 0 6px rgba(34, 197, 94, 0.15)',
+    marginLeft: 'auto'
+  },
+  groqBannerSubCompact: {
+    fontSize: '9px',
+    color: '#4ade80',
+    opacity: 0.8,
+    marginTop: '0px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  // Bottom section
   bottomSection: {
     borderTop: '1px solid rgba(255, 255, 255, 0.06)',
     paddingTop: '16px',
     display: 'flex',
-    flexDirection: 'column',
-    gap: '10px'
+    flexDirection: 'column'
   },
-  settingsBtn: {
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.06)',
-    color: '#e2e8f0',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '13px',
-    fontWeight: '600',
+  controlsRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    width: '100%'
+  },
+  settingsIconBtn: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.06)',
+    color: '#cbd5e1',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '8px',
-    transition: 'all 0.2s'
-  },
-  authorBtn: {
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    background: 'rgba(0, 245, 212, 0.05)',
-    border: '1px solid rgba(0, 245, 212, 0.2)',
-    color: 'var(--color-secondary)',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    transition: 'all 0.2s'
-  },
-  repoBtn: {
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    background: 'rgba(157, 78, 221, 0.05)',
-    border: '1px solid rgba(157, 78, 221, 0.2)',
-    color: '#c084fc',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    textDecoration: 'none',
-    transition: 'all 0.2s'
-  },
-  clearBtn: {
-    width: '100%',
-    padding: '10px',
-    borderRadius: '8px',
-    background: 'transparent',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
-    color: '#f87171',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '12px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '6px',
-    transition: 'all 0.2s'
+    transition: 'all 0.2s',
+    flexShrink: 0
   },
   spinner: {
     width: '24px',

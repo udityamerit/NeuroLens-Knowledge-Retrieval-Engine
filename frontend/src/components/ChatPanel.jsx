@@ -880,7 +880,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             
             {!hasDocuments && (
               <div style={styles.actionPromptCard} className="animate-pulse-glow">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2" style={{ marginTop: '2px' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2" style={{ marginTop: '2px', flexShrink: 0 }}>
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="16" x2="12" y2="12" />
                   <line x1="12" y1="8" x2="12.01" y2="8" />
@@ -888,8 +888,26 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
                 <div style={{ textAlign: 'left' }}>
                   <p style={{ fontWeight: '600', fontSize: '13px', color: '#ffffff' }}>To get started:</p>
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Upload text, PDF, or Word files in the left sidebar, then write your question below!
+                    Upload files (PDF, DOCX, TXT) or paste a URL in the left sidebar, then write your question below!
                   </p>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '8px',
+                    padding: '6px 10px',
+                    background: 'rgba(34, 197, 94, 0.06)',
+                    border: '1px solid rgba(34, 197, 94, 0.15)',
+                    borderRadius: '6px',
+                    width: 'fit-content'
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '600' }}>
+                      Groq API is free to use — no charges apply
+                    </span>
+                  </div>
                 </div>
               </div>
             )}

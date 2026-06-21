@@ -13,3 +13,5 @@ langchain-groq
 langchain-huggingface
 openai
 python-dotenv
+requests
+beautifulsoup4

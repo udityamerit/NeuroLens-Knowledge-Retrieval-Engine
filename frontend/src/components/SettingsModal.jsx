@@ -22,16 +22,13 @@ const PROVIDERS = {
   }
 };
 
-export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
+export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpenAuthor, onClear, hasDocuments }) {
   const [provider, setProvider] = useState(settings.provider || 'groq');
   const [apiKey, setApiKey] = useState(settings.apiKey || '');
   const [modelName, setModelName] = useState(settings.modelName || 'llama-3.3-70b-versatile');
   const [temperature, setTemperature] = useState(settings.temperature || 0.3);
   const [k, setK] = useState(settings.k || 5);
-  const [backendUrl, setBackendUrl] = useState(settings.backendUrl || 'http://127.0.0.1:8000');
   const [showKey, setShowKey] = useState(false);
-  const [elevenLabsApiKey, setElevenLabsApiKey] = useState(settings.elevenLabsApiKey || '');
-  const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
 
   // Load API keys stored in localStorage for convenience
   const [savedKeys, setSavedKeys] = useState({
@@ -60,8 +57,6 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
   const handleSave = () => {
     // Save to local storage for convenience
     localStorage.setItem(`neurolens_key_${provider}`, apiKey);
-    localStorage.setItem('neurolens_backend_url', backendUrl);
-    localStorage.setItem('neurolens_key_elevenlabs', elevenLabsApiKey);
     
     onSave({
       provider,
@@ -69,8 +64,8 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
       modelName,
       temperature: parseFloat(temperature),
       k: parseInt(k),
-      backendUrl,
-      elevenLabsApiKey
+      backendUrl: settings.backendUrl,
+      elevenLabsApiKey: settings.elevenLabsApiKey
     });
     onClose();
   };
@@ -113,10 +108,29 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
                     ...styles.providerBtn,
                     borderColor: provider === id ? 'var(--color-primary)' : 'var(--border-light)',
                     background: provider === id ? 'rgba(157, 78, 221, 0.15)' : 'rgba(255, 255, 255, 0.02)',
-                    color: provider === id ? '#ffffff' : 'var(--text-muted)'
+                    color: provider === id ? '#ffffff' : 'var(--text-muted)',
+                    position: 'relative'
                   }}
                 >
                   {info.name}
+                  {id === 'groq' && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '-7px',
+                      right: '-4px',
+                      fontSize: '8px',
+                      fontWeight: '800',
+                      color: '#22c55e',
+                      background: 'rgba(34, 197, 94, 0.15)',
+                      border: '1px solid rgba(34, 197, 94, 0.35)',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      letterSpacing: '0.8px',
+                      textTransform: 'uppercase',
+                      boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
+                      lineHeight: '1.3'
+                    }}>FREE</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -156,7 +170,14 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
               </button>
             </div>
             <p style={styles.helperText}>
-              Leaving this blank will prompt the server to check for the `{provider === 'groq' ? 'GROQ_API_KEY' : provider === 'openai' ? 'OPENAI_API_KEY' : 'HF_TOKEN'}` in the project's backend env.
+              {provider === 'groq' ? (
+                <>
+                  <span style={{ color: '#4ade80', fontWeight: '600' }}>Groq API is free to use — no charges apply.</span>{' '}
+                  Leaving this blank will check for `GROQ_API_KEY` in the project's backend env.
+                </>
+              ) : (
+                <>Leaving this blank will prompt the server to check for the `{provider === 'openai' ? 'OPENAI_API_KEY' : 'HF_TOKEN'}` in the project's backend env.</>
+              )}
             </p>
           </div>
 
@@ -176,58 +197,6 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
             </select>
           </div>
 
-          {/* Backend Services URL (For TTS) */}
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Backend Services URL (For TTS)</label>
-            <input
-              type="text"
-              placeholder="e.g. http://127.0.0.1:8000"
-              value={backendUrl}
-              onChange={(e) => setBackendUrl(e.target.value)}
-              style={styles.input}
-            />
-            <p style={styles.helperText}>
-              Set this to your computer's local network IP address (e.g. `http://192.168.1.15:8000`) when accessing from a mobile device on your Wi-Fi network.
-            </p>
-          </div>
-
-          {/* ElevenLabs API Key */}
-          <div style={styles.formGroup}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={styles.label}>ElevenLabs API Key (For Direct Browser TTS)</label>
-              <span style={styles.infoSpan}>Stored locally in browser</span>
-            </div>
-            <div style={styles.inputContainer}>
-              <input
-                type={showElevenLabsKey ? 'text' : 'password'}
-                placeholder="Paste your ElevenLabs API Key here..."
-                value={elevenLabsApiKey}
-                onChange={(e) => setElevenLabsApiKey(e.target.value)}
-                style={styles.input}
-              />
-              <button 
-                type="button" 
-                onClick={() => setShowElevenLabsKey(!showElevenLabsKey)} 
-                style={styles.toggleShowBtn}
-                title={showElevenLabsKey ? "Hide API Key" : "Show API Key"}
-              >
-                {showElevenLabsKey ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                    <line x1="1" y1="1" x2="23" y2="23" />
-                  </svg>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
-              </button>
-            </div>
-            <p style={styles.helperText}>
-              Allows direct, premium voice synthesis from the browser when deployed on GitHub Pages. If blank, falls back to local backend service or default browser voice.
-            </p>
-          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="responsive-grid">
             {/* Temperature Slider */}
@@ -270,6 +239,59 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }) {
                 <span>Faster</span>
                 <span>More Context</span>
               </div>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={styles.divider} />
+
+          {/* Resources & Utilities */}
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Resources & Utilities</label>
+            <div style={styles.actionGrid}>
+              <button 
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenAuthor();
+                }} 
+                style={styles.actionBtnAuthor}
+                className="settings-action-btn"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                Author Profile
+              </button>
+
+              <a 
+                href="https://github.com/udityamerit/NeuroLens-Knowledge-Retrieval-Engine" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                style={styles.actionBtnRepo}
+                className="settings-action-btn"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                </svg>
+                GitHub Repo
+              </a>
+
+              {hasDocuments && (
+                <button 
+                  type="button"
+                  onClick={onClear} 
+                  style={styles.actionBtnClear}
+                  className="settings-action-btn"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Clear Library
+                </button>
+              )}
             </div>
           </div>
 
@@ -473,6 +495,66 @@ const styles = {
     fontWeight: '600',
     fontSize: '14px',
     boxShadow: '0 4px 12px rgba(157, 78, 221, 0.3)',
+    transition: 'all 0.2s'
+  },
+  divider: {
+    height: '1px',
+    background: 'rgba(255, 255, 255, 0.06)',
+    margin: '8px 0'
+  },
+  actionGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+    gap: '12px',
+    marginTop: '6px'
+  },
+  actionBtnAuthor: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    background: 'rgba(0, 245, 212, 0.05)',
+    border: '1px solid rgba(0, 245, 212, 0.2)',
+    color: 'var(--color-secondary)',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  actionBtnRepo: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    background: 'rgba(157, 78, 221, 0.05)',
+    border: '1px solid rgba(157, 78, 221, 0.2)',
+    color: '#c084fc',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    textDecoration: 'none',
+    transition: 'all 0.2s'
+  },
+  actionBtnClear: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    background: 'rgba(239, 68, 68, 0.05)',
+    border: '1px solid rgba(239, 68, 68, 0.2)',
+    color: '#f87171',
+    fontFamily: 'var(--font-sans)',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
     transition: 'all 0.2s'
   }
 };

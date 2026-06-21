@@ -346,6 +346,28 @@ body {
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
+.sidebar-settings-icon-btn {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.sidebar-settings-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: var(--color-secondary) !important;
+  box-shadow: 0 0 14px rgba(0, 245, 212, 0.15);
+  transform: rotate(45deg);
+}
+
+.settings-action-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.settings-action-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.02);
+}
+
 .sidebar-author-btn:hover {
   background: rgba(0, 245, 212, 0.12) !important;
   border-color: rgba(0, 245, 212, 0.4) !important;
@@ -424,5 +446,21 @@ body {
 
 .voice-waves {
   animation: wavePulse 1s infinite ease-in-out;
+}
+
+/* Individual Resource Delete button styling */
+.doc-card-item:hover .doc-delete-btn {
+  opacity: 1 !important;
+}
+
+.doc-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #f87171 !important;
+}
+
+@media (max-width: 768px) {
+  .doc-delete-btn {
+    opacity: 0.75 !important;
+  }
 }
 

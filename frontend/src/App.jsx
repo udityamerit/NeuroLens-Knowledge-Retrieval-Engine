@@ -240,6 +240,7 @@ export default function App() {
   const [isAuthorOpen, setIsAuthorOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -346,6 +347,181 @@ export default function App() {
       alert(`Upload failed: ${error.message}`);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleFetchUrl = async (url) => {
+    setIsFetchingUrl(true);
+    try {
+      let pageTitle = url;
+      let pageText = '';
+
+      // Helper: extract clean text from raw HTML string using DOMParser
+      const extractTextFromHtml = (html) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Extract title
+        const titleEl = doc.querySelector('title');
+        const extractedTitle = titleEl ? titleEl.textContent.trim() : url;
+
+        // Remove non-content elements
+        const removeTags = ['script', 'style', 'nav', 'footer', 'header', 'aside', 'form', 'iframe', 'noscript', 'svg', 'img', 'video', 'audio'];
+        removeTags.forEach(tag => {
+          doc.querySelectorAll(tag).forEach(el => el.remove());
+        });
+
+        // Get clean text from body
+        const body = doc.body;
+        const text = body ? body.innerText || body.textContent : '';
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        return { title: extractedTitle, text: lines.join('\n') };
+      };
+
+      // Helper: extract title from Jina Reader markdown output
+      const extractTitleFromMarkdown = (md) => {
+        // Jina returns "Title: ...\n" at the top
+        const titleMatch = md.match(/^Title:\s*(.+)$/m);
+        if (titleMatch && titleMatch[1].trim()) return titleMatch[1].trim();
+        // Fallback: use first heading
+        const headingMatch = md.match(/^#+\s+(.+)$/m);
+        if (headingMatch && headingMatch[1].trim()) return headingMatch[1].trim();
+        return url;
+      };
+
+      let fetched = false;
+
+      // Strategy 1: Jina Reader API — renders JavaScript, returns clean markdown (best for SPAs)
+      try {
+        const jinaUrl = `https://r.jina.ai/${url}`;
+        const res = await fetch(jinaUrl, {
+          headers: { 'Accept': 'text/plain' },
+          signal: AbortSignal.timeout(20000)
+        });
+        if (res.ok) {
+          const markdown = await res.text();
+          if (markdown && markdown.length > 30) {
+            // Strip markdown image/link syntax but keep text
+            const cleanText = markdown
+              .replace(/!\[.*?\]\(.*?\)/g, '')  // remove images
+              .replace(/\[([^\]]*)\]\(.*?\)/g, '$1')  // keep link text
+              .trim();
+            if (cleanText.length > 30) {
+              pageTitle = extractTitleFromMarkdown(markdown);
+              pageText = cleanText;
+              fetched = true;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Jina Reader API failed:", e);
+      }
+
+      // Strategy 2: allorigins.win CORS proxy
+      if (!fetched) {
+        try {
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+          const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+          if (res.ok) {
+            const html = await res.text();
+            if (html && html.length > 100) {
+              const result = extractTextFromHtml(html);
+              if (result.text.length > 30) {
+                pageTitle = result.title;
+                pageText = result.text;
+                fetched = true;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("allorigins.win proxy failed:", e);
+        }
+      }
+
+      // Strategy 3: corsproxy.io fallback
+      if (!fetched) {
+        try {
+          const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+          const res = await fetch(proxyUrl2, { signal: AbortSignal.timeout(12000) });
+          if (res.ok) {
+            const html = await res.text();
+            if (html && html.length > 100) {
+              const result = extractTextFromHtml(html);
+              if (result.text.length > 30) {
+                pageTitle = result.title;
+                pageText = result.text;
+                fetched = true;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("corsproxy.io proxy failed:", e);
+        }
+      }
+
+      // Strategy 4: Backend /api/fetch-url fallback
+      if (!fetched) {
+        try {
+          const backendBase = settings.backendUrl || 'http://127.0.0.1:8000';
+          const res = await fetch(`${backendBase}/api/fetch-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
+            signal: AbortSignal.timeout(15000)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.content && data.content.length > 30) {
+              pageTitle = data.title || url;
+              pageText = data.content;
+              fetched = true;
+            }
+          }
+        } catch (e) {
+          console.warn("Backend /api/fetch-url fallback failed:", e);
+        }
+      }
+
+      if (!fetched || !pageText) {
+        throw new Error("Could not fetch readable content from this URL. The page may be blocking automated access or may be empty.");
+      }
+
+      // Build a display name for the source
+      const displayName = pageTitle.length > 60 ? pageTitle.substring(0, 57) + '...' : pageTitle;
+      const sourceName = `🌐 ${displayName}`;
+
+      // Chunk the extracted text
+      const newChunks = splitTextIntoChunks(pageText, sourceName, 'url', null, 800, 150);
+
+      if (newChunks.length === 0) {
+        throw new Error("No meaningful text content extracted from this URL.");
+      }
+
+      const updatedDocs = [...documents];
+      if (!updatedDocs.includes(sourceName)) updatedDocs.push(sourceName);
+
+      const updatedChunks = [...allChunks, ...newChunks];
+
+      setDocuments(updatedDocs);
+      setAllChunks(updatedChunks);
+
+      // Persist
+      localStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
+      localStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `🌐 **System:** Successfully fetched and indexed content from **${displayName}**. Extracted **${newChunks.length}** text chunks. You can now ask questions about this page.`,
+          sources: []
+        }
+      ]);
+    } catch (error) {
+      console.error("URL fetch error:", error);
+      alert(`URL fetch failed: ${error.message}`);
+    } finally {
+      setIsFetchingUrl(false);
     }
   };
 
@@ -464,6 +640,29 @@ export default function App() {
     localStorage.removeItem('neurolens_chunks');
   };
 
+  const handleDeleteDocument = (docName) => {
+    if (!window.confirm(`Are you sure you want to delete "${docName}" from the library?`)) {
+      return;
+    }
+    const updatedDocs = documents.filter(d => d !== docName);
+    const updatedChunks = allChunks.filter(c => c.metadata.source !== docName);
+
+    setDocuments(updatedDocs);
+    setAllChunks(updatedChunks);
+
+    localStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
+    localStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `🗑️ **System:** Removed **${docName}** and its corresponding text chunks from the library database.`,
+        sources: []
+      }
+    ]);
+  };
+
   const handleSaveSettings = (newSettings) => {
     setSettings(newSettings);
   };
@@ -498,10 +697,13 @@ export default function App() {
             handleUpload(files);
             setIsSidebarOpen(false); // Close sidebar after upload on mobile
           }}
-          onClear={handleClear}
+          onFetchUrl={(url) => {
+            handleFetchUrl(url);
+          }}
           onOpenSettings={() => setIsSettingsOpen(true)}
-          onOpenAuthor={() => setIsAuthorOpen(true)}
+          onDeleteDocument={handleDeleteDocument}
           isUploading={isUploading}
+          isFetchingUrl={isFetchingUrl}
         />
       </div>
 
@@ -524,6 +726,9 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSave={handleSaveSettings}
+        onOpenAuthor={() => setIsAuthorOpen(true)}
+        onClear={handleClear}
+        hasDocuments={documents.length > 0}
       />
 
       {/* Author Modal overlay */}
