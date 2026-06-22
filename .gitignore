@@ -50,13 +50,3 @@ backend/faiss_index/
 *.sw?
 .DS_Store
 Thumbs.db
-
-# Android build outputs & local config
-android/local.properties
-android/.gradle/
-android/app/build/
-android/build/
-*.apk
-*.aab
-*.ap_
-android/app/src/main/assets/www/

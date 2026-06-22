@@ -38,18 +38,12 @@
         window.onerror = function(message, source, lineno, colno, error) {
           var errStr = message + '\nAt: ' + source + ':' + lineno + ':' + colno;
           displayHTMLRawError('JavaScript Error', errStr);
-          if (window.AndroidBridge) {
-            window.AndroidBridge.reportError(errStr);
-          }
           return false;
         };
         window.addEventListener('unhandledrejection', function(event) {
           var reason = event.reason;
           var errStr = 'Unhandled Rejection: ' + (reason && reason.stack ? reason.stack : reason);
           displayHTMLRawError('Promise Rejection', errStr);
-          if (window.AndroidBridge) {
-            window.AndroidBridge.reportError(errStr);
-          }
         });
       })();
     </script>
