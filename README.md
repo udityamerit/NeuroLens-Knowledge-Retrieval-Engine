@@ -24,6 +24,7 @@ NeuroLens allows users to upload local documents (PDF, DOCX, TXT), index them in
 
 ---
 
+
 ## 🛠️ Architecture Overview
 
 NeuroLens is designed as a decoupled client-server architecture.
