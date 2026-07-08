@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { safeStorage } from '../utils/storage';
 
 const PROVIDERS = {
@@ -38,16 +38,17 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
     huggingface: safeStorage.getItem('neurolens_key_huggingface') || ''
   });
 
-  // Whenever provider changes, update the model list and modelName
-  useEffect(() => {
-    const currentProviderKeys = savedKeys[provider] || '';
+  // Update the model list and apiKey when provider changes
+  const handleProviderChange = (newProvider) => {
+    setProvider(newProvider);
+    const currentProviderKeys = savedKeys[newProvider] || '';
     setApiKey(currentProviderKeys);
     
     // Set default model for selected provider if the current modelName doesn't belong to the provider
-    if (!PROVIDERS[provider].models.includes(modelName)) {
-      setModelName(PROVIDERS[provider].defaultModel);
+    if (!PROVIDERS[newProvider].models.includes(modelName)) {
+      setModelName(PROVIDERS[newProvider].defaultModel);
     }
-  }, [provider]);
+  };
 
   // Keep savedKeys state in sync when apiKey is modified
   const handleKeyChange = (val) => {
@@ -104,7 +105,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
               {Object.entries(PROVIDERS).map(([id, info]) => (
                 <button
                   key={id}
-                  onClick={() => setProvider(id)}
+                  onClick={() => handleProviderChange(id)}
                   style={{
                     ...styles.providerBtn,
                     borderColor: provider === id ? 'var(--color-primary)' : 'var(--border-light)',

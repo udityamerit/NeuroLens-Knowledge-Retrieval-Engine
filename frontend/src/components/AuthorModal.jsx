@@ -1,4 +1,3 @@
-import React from 'react';
 
 export default function AuthorModal({ isOpen, onClose }) {
   if (!isOpen) return null;

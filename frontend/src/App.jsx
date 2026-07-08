@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
 import SettingsModal from './components/SettingsModal';
@@ -126,7 +126,7 @@ async function extractTextFromImage(file, provider, apiKey, modelName) {
         reject(err);
       }
     };
-    reader.onerror = (e) => reject(new Error("Failed to read image file."));
+    reader.onerror = () => reject(new Error("Failed to read image file."));
     reader.readAsDataURL(file);
   });
 }

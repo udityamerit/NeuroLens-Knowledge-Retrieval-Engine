@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import Logo from './Logo';
 
 export default function Sidebar({ documents, onUpload, onFetchUrl, onOpenSettings, onOpenCamera, onPreviewDocument, onDeleteDocument, isUploading, isFetchingUrl }) {

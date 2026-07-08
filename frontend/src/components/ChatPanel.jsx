@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar, backendUrl, elevenLabsApiKey }) {
   const [query, setQuery] = useState('');
@@ -43,12 +43,12 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
       if (audioRef.current && audioRef.current !== "loading") {
         try {
           audioRef.current.pause();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
     };
   }, []);
@@ -64,7 +64,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
       setIsListening(false);
     } else {
@@ -72,7 +72,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
 
       // Cancel any active speech/audio output before starting microphone capture
@@ -82,7 +82,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       if (audioRef.current && audioRef.current !== "loading") {
         try {
           audioRef.current.pause();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
       audioRef.current = null;
       setSpeakingIndex(null);
@@ -159,7 +159,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
   };
 
   const fetchSentenceAudio = (text) => {
-    const resolvedElevenLabsKey = elevenLabsApiKey || import.meta.env.VITE_ELEVENLABS_API_KEY || (typeof __ELEVENLABS_API_KEY__ !== 'undefined' ? __ELEVENLABS_API_KEY__ : '') || '';
+    const resolvedElevenLabsKey = elevenLabsApiKey || import.meta.env.VITE_ELEVENLABS_API_KEY || (typeof window !== 'undefined' && window.__ELEVENLABS_API_KEY__ ? window.__ELEVENLABS_API_KEY__ : '') || '';
 
     if (resolvedElevenLabsKey) {
       const voiceId = "ErXwobaYiN019PkySvjV"; // Antoni (Male - warm, professional)
@@ -258,7 +258,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       if (audioRef.current && audioRef.current !== "loading") {
         try {
           audioRef.current.pause();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
       audioRef.current = null;
       return;
@@ -321,46 +321,13 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
     });
   };
 
-  const speakLocal = (cleanText, index) => {
-    if (!window.speechSynthesis) {
-      setSpeakingIndex(null);
-      return;
-    }
-    
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    const containsHindi = /[\u0900-\u097F]/.test(cleanText);
-    if (containsHindi) {
-      utterance.lang = 'hi-IN';
-      const voices = window.speechSynthesis.getVoices();
-      const hiVoice = voices.find(voice => voice.lang.includes('hi') || voice.lang.includes('HI'));
-      if (hiVoice) utterance.voice = hiVoice;
-    } else {
-      utterance.lang = 'en-US';
-      const voices = window.speechSynthesis.getVoices();
-      const enVoice = voices.find(voice => voice.lang.includes('en-US') || voice.lang.includes('en_US') || voice.lang.includes('en-GB') || voice.lang.includes('en_GB'));
-      if (enVoice) utterance.voice = enVoice;
-    }
-    
-    utterance.onend = () => {
-      setSpeakingIndex(null);
-    };
-    
-    utterance.onerror = (e) => {
-      console.error("Local Speech synthesis error:", e);
-      setSpeakingIndex(null);
-    };
-    
-    setSpeakingIndex(index);
-    window.speechSynthesis.speak(utterance);
-  };
-
   const toggleSpeak = (text, index) => {
     if (speakingIndex === index) {
       speakingSessionRef.current.cancelled = true;
       if (audioRef.current && audioRef.current !== "loading") {
         try {
           audioRef.current.pause();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();
@@ -372,7 +339,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
       if (audioRef.current && audioRef.current !== "loading") {
         try {
           audioRef.current.pause();
-        } catch (e) {}
+        } catch { /* ignore */ }
       }
       if (window.speechSynthesis) {
         window.speechSynthesis.cancel();

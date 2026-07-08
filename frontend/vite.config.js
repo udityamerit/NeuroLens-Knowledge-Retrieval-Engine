@@ -8,5 +8,5 @@ export default defineConfig({
     react(),
     legacy()
   ],
-  base: ''
+  base: '/NeuroLens-Knowledge-Retrieval-Engine/'
 })

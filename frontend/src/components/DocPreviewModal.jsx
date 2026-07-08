@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 export default function DocPreviewModal({ isOpen, onClose, docName, chunks = [], imageUrl }) {
   const [activeTab, setActiveTab] = useState('text'); // 'text' or 'image'

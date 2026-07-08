@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function CameraModal({ isOpen, onClose, onCapture }) {
   const [stream, setStream] = useState(null);
