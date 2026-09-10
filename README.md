@@ -1,39 +1,78 @@
-# NeuroLens Knowledge Retrieval Engine
+# NeuroLens Knowledge Retrieval Engine 🧠✨
+
+<div align="center">
 
 ![NeuroLens Banner](banner.png)
 
-**NeuroLens** is a premium, state-of-the-art Document Retrieval-Augmented Generation (RAG) system. It combines an immersive, holographic, sci-fi-themed React frontend with a high-performance FastAPI backend.
+[![React 19](https://img.shields.io/badge/Frontend-React%2019-61dafb?logo=react&logoColor=black)](https://react.dev/)
+[![Vite 8](https://img.shields.io/badge/Bundler-Vite%208-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![LangChain](https://img.shields.io/badge/Orchestration-LangChain-1C3C3C?logo=langchain&logoColor=white)](https://langchain.com/)
+[![FAISS](https://img.shields.io/badge/Vector%20Store-FAISS-00599C)](https://github.com/facebookresearch/faiss)
+[![KaTeX](https://img.shields.io/badge/Math-KaTeX-3298DC)](https://katex.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-NeuroLens allows users to upload local documents (PDF, DOCX, TXT), index them into a local **FAISS vector database** using **SentenceTransformers embeddings**, and query them interactively with contextual history. It integrates seamlessly with multiple LLM API providers like **Groq**, **OpenAI**, and **Hugging Face Hub** for synthesizing intelligent, citation-backed answers.
+**A Next-Generation, Dual-Architecture Document Retrieval-Augmented Generation (RAG) System featuring Multi-PDF Global Awareness, Real-time KaTeX LaTeX Rendering, and Cyberpunk Sci-Fi Glassmorphism.**
+
+[Live Demo](https://udityamerit.github.io/NeuroLens-Knowledge-Retrieval-Engine/) • [Architecture](#-architecture-overview) • [Key Features](#-key-features) • [Installation](#-setup--installation) • [Author](#-author)
+
+</div>
 
 ---
 
+## 🌟 Overview
+
+**NeuroLens** is a high-performance Document Retrieval-Augmented Generation (RAG) platform designed to ingest, index, and analyze complex documents with sub-millisecond retrieval speeds and zero context starvation. 
+
+It provides **Dual Execution Modes**:
+1. **Zero-Backend Standalone Mode (Browser-Native)**: Runs 100% inside your web browser (ideal for GitHub Pages / static hosting). PDF parsing (PDF.js), DOCX extraction (Mammoth), chunking, BM25 fair-share ranking, and IndexedDB persistence all execute client-side.
+2. **Full-Stack Hybrid Mode (FastAPI + FAISS)**: High-throughput Python server leveraging SentenceTransformers (`all-MiniLM-L6-v2`) and FAISS vector databases for dense semantic search.
+
+---
 
 ## 🚀 Key Features
 
-*   **Immersive Holographic UI:** Custom-built glassmorphism design with interactive, physics-based neural synapse canvas animations responding to user interactions.
-*   **Local Document Ingestion:** Drag-and-drop support for PDF, Word documents (.docx), and Plain Text (.txt) files.
-*   **URL Content Fetching:** Paste any webpage URL to extract and index its content as a knowledge source.
-*   **Vector Search & Embeddings:** Employs LangChain, `sentence-transformers/all-MiniLM-L6-v2` embeddings, and a `FAISS` index to run sub-millisecond semantic retrieval locally.
-*   **Smart Conversational Rephrasing:** Evaluates active user query history to construct self-contained, standalone search terms before running semantic retrieval.
-*   **Multi-Provider Integration:** Custom-configured settings supporting Groq (Llama-3.3, etc.), OpenAI (GPT-4o, etc.), and Hugging Face Hub inference API pipelines.
-*   **Granular Citation Support:** Displays glowing, interactive source citations mapping exact text passages and PDF pages matching the generated answers.
-*   **Camera OCR Scanner:** Capture documents with your camera and extract text for indexing.
-*   **Chat Without Documents:** Ask general questions or chat directly without uploading any files.
-*   **Lightweight Deployment & Storage:** Features automatic temporary file cleanups and vector store index serialization locally.
+### 📚 Multi-Document Fair-Share Intelligence
+- **Fair-Share Round-Robin Retrieval (`searchBM25MultiDoc`)**: Solves single-document context starvation. Retrieved context passages are fairly distributed across all active documents so long files do not drown out shorter ones.
+- **Dynamic Context Quotas**: Scales retrieved chunks dynamically based on library size ($k = \max(k, \min(\text{documents.length} \times 3, 15))$).
+- **Cross-Document Stratified Summarization**: When asked to "summarize all" or "compare documents", NeuroLens pulls opening abstracts, core body sections, and conclusions from *every single uploaded file*.
+- **Executive Catalog Awareness**: Injects a structured catalog containing file names, page counts, chunk metrics, and opening synopses directly into the LLM system prompt for 100% inventory awareness.
+- **Ground Truth Override & History Isolation**: Internal system notifications (uploads, deletions, URL scrapes) are filtered from chat history, ensuring re-added files (e.g. `cap1.pdf`) are recognized with live ground truth priority.
+
+### 📐 Beautiful KaTeX LaTeX Mathematical Rendering
+- **Full LaTeX Math Support**: Automatically renders display equations (`$$...$$`, `\[...\]`, `\begin{equation}...\end{equation}`, `\begin{cases}...\end{cases}`, matrices, fractions, integrals) and inline formulas (`$...$`, `\(...\)`).
+- **Document Preview Math Rendering**: Mathematical formulas within uploaded PDFs and DOCX files render with KaTeX inside the chunk preview modal.
+- **Neon Math Aesthetics**: Styled with responsive overflow scrollbars and subtle sci-fi cyan glow.
+
+### 🤖 Modern Free & Production LLM Catalog
+- **Groq Free Models**: Pre-configured with the latest ultra-fast models including:
+  - `qwen/qwen3.8-27b` (Default recommended free model)
+  - `deepseek-r1-distill-llama-70b`
+  - `meta-llama/llama-4-scout-17b-16k`
+  - `llama-3.3-70b-versatile`
+  - `llama-3.1-8b-instant`
+- **OpenAI Integration**: Native support for `gpt-4o`, `gpt-4o-mini`, and custom models.
+- **Hugging Face Hub**: Compatible with Hugging Face Serverless Inference Endpoints.
+- **Automatic Legacy Migration**: Deprecated models (such as `llama-3-8b-8192` or `mixtral-8x7b-32768`) are automatically migrated to high-performance active alternatives.
+
+### 🛡️ Privacy & Secure Key Management
+- **Zero-Exposure Key Storage**: All API keys are stored locally in the browser with obfuscation. Keys are never printed in public console logs, never shared with third parties, and never sent to our servers.
+- **Interactive Security Shield**: Settings modal features a password mask toggle, direct links to free API dashboards, and real-time validation badges.
+
+### 🎙️ Voice & Multimodal Interaction
+- **Dual TTS Engine**: Integrated **ElevenLabs** neural speech synthesis with seamless automatic fallback to the **Web Speech API**.
+- **Math-to-Speech Parser**: Converts LaTeX formulas and code blocks into natural, speakable English or Hindi so voice synthesis sounds fluent.
+- **Voice Speech-to-Text Input**: Dictate your questions directly via browser microphone with dual English/Hindi language toggles.
+- **Camera OCR Scanner**: Scan physical pages or whiteboards using your device camera or upload image files directly.
+
+### 🔮 Immersive Sci-Fi Holographic Interface
+- **Dynamic Neural Synapse Canvas**: An interactive, physics-based network animation with drifting nodes and glowing electrical impulses traveling across synaptic pathways.
+- **Active Document Scope Pill**: Toggle between querying **All Sources** or **Focus Mode** on a single specific document with a single click.
+- **Responsive Mobile Drawer**: Full mobile, tablet, and desktop responsiveness with slide-out sidebar overlay.
 
 ---
 
-
 ## 🛠️ Architecture Overview
-
-NeuroLens is designed as a decoupled client-server architecture.
-
-1.  **Frontend (React/Vite):** Renders the modular interface components (Sidebar, Chat Panel, Settings, and Author modals). Manages local settings configuration, document ingestion status, and query dispatching.
-2.  **Backend (FastAPI):** Exposes RESTful API endpoints for file uploads, query execution, document list registry, and database clearing.
-3.  **RAG Engine (LangChain/FAISS):** Oversees text extraction, recursive character splitting (size: 800, overlap: 150), vector search matching, and API orchestration with LLM providers.
-
-### System Architecture
 
 ```mermaid
 graph TD
@@ -42,181 +81,173 @@ graph TD
     classDef database fill:#0f172a,stroke:#3a0ca3,stroke-width:2px,color:#fff;
     classDef external fill:#2b2d42,stroke:#ef233c,stroke-width:2px,color:#fff;
 
-    subgraph Client [Client - React/Vite App]
-        UI[Interactive UI]:::client
-        UploadSide[Sidebar File Upload]:::client
-        ChatPanel[Chat Panel]:::client
-        SettingsModal[Model & Settings Panel]:::client
+    subgraph Browser ["Client-Side (React 19 / Vite 8)"]
+        UI["Holographic UI & Synapse Canvas"]:::client
+        DocParser["Client Parsers: PDF.js / Mammoth / OCR"]:::client
+        BM25["Fair-Share BM25 & Stratified Sampler"]:::client
+        IndexedDB[("IndexedDB Storage (GB Scale)")]:::database
+        KaTeX["KaTeX Formula Engine"]:::client
     end
 
-    subgraph Server [Backend - FastAPI & Python]
-        API[FastAPI Router]:::server
-        RAGEngine[RAG Engine Manager]:::server
-        Parser[Doc Parsers <br/> pypdf / docx / txt]:::server
-        Splitter[RecursiveCharacterTextSplitter <br/> Size: 800, Overlap: 150]:::server
-        Embeddings[SentenceTransformers <br/> all-MiniLM-L6-v2]:::server
+    subgraph BackendServer ["Optional Backend (FastAPI / Python)"]
+        API["FastAPI REST Endpoints"]:::server
+        RAG["LangChain RAG Engine"]:::server
+        Embedder["SentenceTransformers all-MiniLM-L6-v2"]:::server
+        FAISS[("FAISS Vector Index")]:::database
     end
 
-    subgraph DB [Vector Storage]
-        FAISS[FAISS Index]:::database
+    subgraph Providers ["LLM & Speech APIs"]
+        Groq["Groq Cloud (Qwen, Llama 3.3/4, DeepSeek)"]:::external
+        OpenAI["OpenAI (GPT-4o, GPT-4o-mini)"]:::external
+        HF["Hugging Face Hub"]:::external
+        ElevenLabs["ElevenLabs Voice TTS"]:::external
     end
 
-    subgraph External [External Services]
-        LLM[LLM APIs <br/> Groq / OpenAI / HF]:::external
-    end
+    %% Client flow
+    UI --> DocParser
+    DocParser --> BM25
+    BM25 --> IndexedDB
+    UI --> KaTeX
 
-    %% Flow connections
-    UI --> UploadSide
-    UI --> ChatPanel
-    UI --> SettingsModal
+    %% Direct browser to LLM
+    UI -->|Direct Browser API Call| Groq
+    UI -->|Direct Browser API Call| OpenAI
+    UI -->|Direct Browser API Call| HF
+    UI -->|Speech Synthesis| ElevenLabs
 
-    UploadSide -->|POST /api/upload| API
-    ChatPanel -->|POST /api/query| API
-    ChatPanel -->|GET /api/documents| API
-    ChatPanel -->|POST /api/clear| API
-
-    API --> RAGEngine
-    RAGEngine --> Parser
-    Parser --> Splitter
-    Splitter --> Embeddings
-    Embeddings -->|Index & Search Chunks| FAISS
-    RAGEngine -->|Generates Answer| LLM
+    %% Hybrid mode
+    UI -.->|Optional Hybrid Request| API
+    API --> RAG
+    RAG --> Embedder
+    Embedder --> FAISS
+    RAG --> Groq
 ```
 
-### RAG Query Pipeline Flow
+---
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as User (UI)
-    participant API as FastAPI Backend
-    participant RAG as RAG Engine
-    participant VS as FAISS Vector Store
-    participant LLM as LLM Provider (Groq/OpenAI/HF)
+## 📂 Supported File Types & Ingestion
 
-    User->>API: Send Question + Chat History + LLM Settings (POST /api/query)
-    API->>RAG: Invoke query_llm()
-    alt Has Chat History
-        RAG->>LLM: Rewrite Query as Standalone (temperature = 0)
-        LLM-->>RAG: Return Standalone Search Query
-    end
-    RAG->>VS: Perform Similarity Search (k matching chunks)
-    VS-->>RAG: Return Top-k Chunks + Metadata
-    RAG->>RAG: Format System Prompt with Context Chunks
-    RAG->>LLM: Invoke Model with Context + Question + History
-    LLM-->>RAG: Synthesized RAG Response
-    RAG-->>API: Return Answer & Sources JSON
-    API-->>User: Render Response with glowing source citation tags
-```
+| Source Type | Extension | Ingestion Method | Features |
+| :--- | :--- | :--- | :--- |
+| **PDF Documents** | `.pdf` | PDF.js / PyPDF | Multi-page text extraction, page tracking, LaTeX math preservation |
+| **Word Documents** | `.docx` | Mammoth / python-docx | Preserves paragraph hierarchy and clean body text |
+| **Plain Text** | `.txt`, `.md` | TextDecoder / Native | Fast direct text parsing |
+| **Webpages / URLs** | `http://`, `https://` | AllOrigins Proxy / BeautifulSoup | Ingests documentation, articles, and blogs directly from links |
+| **Images & Camera** | `.png`, `.jpg`, `.jpeg` | Vision LLM OCR | Scans text and math equations from photos and physical notes |
 
 ---
 
 ## ⚡ Setup & Installation
 
 ### Prerequisites
+- **Node.js** (v18 or higher)
+- **Python** (v3.10 or higher — *optional, only needed for backend FAISS mode*)
 
-*   **Node.js** (v18 or higher)
-*   **Python** (v3.10 or higher)
-
-### Environment Configurations
-
-Create a `.env` file in the project's root folder to configure backend LLM credentials (optional; you can also paste them directly into the frontend Settings UI):
-
-```env
-GROQ_API_KEY=your_groq_api_key
-OPENAI_API_KEY=your_openai_api_key
-HF_TOKEN=your_hugging_face_token
+### Quick Start (Windows)
+Double-click `run.bat` or run:
+```powershell
+.\run.bat
 ```
-
-### Automated Start (Windows)
-
-Simply run the double-click helper batch script:
-
-```bash
-run.bat
-```
-
-This will automatically create a virtual environment, install Python/Node dependencies, and start both the FastAPI backend (on port `8000`) and the Vite development server (on port `5173`).
+*This automatically initializes the Python virtual environment, installs dependencies, and launches both the backend on `http://localhost:8000` and the frontend on `http://localhost:5173`.*
 
 ---
 
-## 📦 Manual Setup
+### Manual Setup
 
-### 1. Backend
-
-Navigate to the `backend` folder:
-
-```bash
-cd backend
-```
-
-Create a virtual environment and activate it:
-
-```bash
-python -m venv venv
-# On Windows
-venv\Scripts\activate
-# On macOS/Linux
-source venv/bin/activate
-```
-
-Install requirements:
-
-```bash
-pip install -r requirements.txt
-```
-
-Launch the FastAPI server:
-
-```bash
-python app.py
-```
-
-### 2. Frontend
-
-Navigate to the `frontend` folder:
-
+#### 1. Frontend Setup (Standalone or Connected)
 ```bash
 cd frontend
-```
-
-Install dependencies:
-
-```bash
 npm install
-```
-
-Launch Vite local development server:
-
-```bash
 npm run dev
 ```
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+#### 2. Backend Setup (Optional FAISS Acceleration)
+```bash
+cd backend
+python -m venv venv
+
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+pip install -r requirements.txt
+python app.py
+```
+FastAPI server runs at [http://localhost:8000](http://localhost:8000). Interactive Swagger documentation is available at `http://localhost:8000/docs`.
 
 ---
 
-## 🌐 Production Deployment
+## 🔑 Environment Configuration
 
-The frontend of this application is pre-configured for GitHub Pages deployment. To deploy your own instance:
+You can enter your API keys directly into the **Settings UI** in your browser, or configure a `.env` file in the project root:
 
-1.  Make sure the `base` property in `frontend/vite.config.js` matches your GitHub repository name:
-    ```javascript
-    export default defineConfig({
-      plugins: [react()],
-      base: '/<repository-name>/',
-    })
-    ```
-2.  Push to `main`/`master` to trigger the automated GitHub Actions deployment workflow defined in `.github/workflows/deploy.yml`.
+```env
+# Optional: Pre-fill API keys
+GROQ_API_KEY=gsk_your_groq_api_key_here
+OPENAI_API_KEY=sk_your_openai_key_here
+HF_TOKEN=hf_your_huggingface_token_here
+ELEVENLABS_API_KEY=your_elevenlabs_key_here
+```
+
+> 💡 **Tip**: Groq API keys are **100% free** and provide instant access to `qwen/qwen3.8-27b` and `llama-3.3-70b-versatile` at over 300+ tokens/second. You can get a free key at [console.groq.com](https://console.groq.com/keys).
+
+---
+
+## 🌐 Production Deployment (GitHub Pages)
+
+The frontend is fully configured for automated GitHub Pages continuous deployment:
+1. Fork or clone this repository.
+2. In `frontend/vite.config.js`, verify the `base` path matches your repo name:
+   ```javascript
+   export default defineConfig({
+     plugins: [react()],
+     base: '/NeuroLens-Knowledge-Retrieval-Engine/',
+   })
+   ```
+3. Push to the `main` branch. The automated workflow `.github/workflows/deploy.yml` will build and publish the application to GitHub Pages.
+
+---
+
+## 🧪 Testing
+
+### Frontend Production Build
+```bash
+cd frontend
+npm run build
+```
+
+### Formula Rendering Verification
+```bash
+cd frontend
+node test_formula.mjs
+```
+
+### Backend Diagnostics
+```bash
+python scratch/test_gpt_oss.py
+```
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
 ---
 
-<p align="center">
-  Built with ❤️ by <a href="https://udityanarayantiwari.netlify.app/">Uditya Narayan Tiwari</a> &nbsp;|&nbsp;
-  <a href="https://github.com/udityamerit">GitHub</a> &nbsp;|&nbsp;
-  <a href="https://www.linkedin.com/in/uditya-narayan-tiwari-562332289/">LinkedIn</a>
-</p>
+## 👨‍💻 Author
+
+**Uditya Narayan Tiwari**  
+*Machine Learning Engineer & Generative AI Developer*  
+Specializing in AI/ML, B.Tech CSE (AI & ML) at VIT Bhopal University.
+
+- 🌐 **Portfolio**: [udityanarayantiwari.netlify.app](https://udityanarayantiwari.netlify.app/)
+- 🐙 **GitHub**: [@udityamerit](https://github.com/udityamerit)
+- 💼 **LinkedIn**: [Uditya Narayan Tiwari](https://www.linkedin.com/in/uditya-narayan-tiwari-562332289/)
+- 🧠 **Knowledge Base**: [udityaknowledgebase.netlify.app](https://udityaknowledgebase.netlify.app/)
+
+<div align="center">
+  <sub>Engineered with precision for seamless document intelligence. If you find this project helpful, please give it a ⭐️!</sub>
+</div>
