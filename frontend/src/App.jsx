@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
 import SettingsModal from './components/SettingsModal';
@@ -6,11 +6,13 @@ import AuthorModal from './components/AuthorModal';
 import CameraModal from './components/CameraModal';
 import DocPreviewModal from './components/DocPreviewModal';
 import { safeStorage } from './utils/storage';
+import { indexedStorage } from './utils/indexedStorage';
+import { buildInvertedIndex, searchBM25, isSummaryQuery, getStratifiedSummaryChunks } from './utils/bm25Engine';
 
 // --- Client-Side RAG Helper Functions ---
 
-// Parse PDF file using PDF.js CDN library loaded in index.html
-async function parsePDF(arrayBuffer) {
+// High-Speed Concurrent Batched PDF Parser
+async function parsePDF(arrayBuffer, onProgress) {
   const pdfjsLib = window.pdfjsLib;
   if (!pdfjsLib) {
     throw new Error("PDF.js library is not loaded. Please verify internet connection.");
@@ -19,16 +21,67 @@ async function parsePDF(arrayBuffer) {
   
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   const pdf = await loadingTask.promise;
+  const numPages = pdf.numPages;
   const pagesText = [];
-  
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const text = content.items.map(item => item.str).join(' ');
-    if (text.trim()) {
-      pagesText.push({ text, page: i });
+
+  // Extract in non-blocking batches of 6 pages concurrently
+  const BATCH_SIZE = 6;
+  const startTime = Date.now();
+
+  for (let batchStart = 1; batchStart <= numPages; batchStart += BATCH_SIZE) {
+    const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, numPages);
+    const batchPromises = [];
+
+    for (let pageNum = batchStart; pageNum <= batchEnd; pageNum++) {
+      batchPromises.push(
+        (async (pNum) => {
+          try {
+            const page = await pdf.getPage(pNum);
+            const content = await page.getTextContent();
+            
+            // Reconstruct text with space/line awareness
+            let pageRaw = content.items.map(item => item.str).join(' ');
+            
+            // Clean hyphenated word splits across line wraps: e.g. "com-\nputing" -> "computing"
+            pageRaw = pageRaw.replace(/(\w+)-\s+(\w+)/g, '$1$2');
+            
+            // Normalize excessive whitespace
+            pageRaw = pageRaw.replace(/\s+/g, ' ').trim();
+
+            if (pageRaw) {
+              return { text: pageRaw, page: pNum };
+            }
+          } catch (err) {
+            console.warn(`Failed to extract page ${pNum}:`, err);
+          }
+          return null;
+        })(pageNum)
+      );
     }
+
+    const batchResults = await Promise.all(batchPromises);
+    batchResults.forEach(res => {
+      if (res) pagesText.push(res);
+    });
+
+    // Report real-time progress
+    if (onProgress) {
+      const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
+      const speed = Math.round(batchEnd / elapsedSec);
+      onProgress({
+        current: batchEnd,
+        total: numPages,
+        percent: Math.min(100, Math.round((batchEnd / numPages) * 100)),
+        speed: `${speed} p/s`
+      });
+    }
+
+    // Yield control to browser event loop to maintain 60 FPS rendering
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
+
+  // Sort pages in ascending order to guarantee chronological alignment
+  pagesText.sort((a, b) => a.page - b.page);
   return pagesText;
 }
 
@@ -44,10 +97,15 @@ async function parseDOCX(arrayBuffer) {
 
 // Helper to call vision API for a single model
 async function callVisionAPI(url, model, apiKey, file, base64Data) {
+  let effectiveApiKey = (apiKey || '').trim();
+  if (!effectiveApiKey) {
+    effectiveApiKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_groq') || '').trim();
+  }
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${apiKey}`,
+      "Authorization": `Bearer ${effectiveApiKey}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -58,7 +116,7 @@ async function callVisionAPI(url, model, apiKey, file, base64Data) {
           content: [
             {
               type: "text",
-              text: "You are an advanced document analyst and OCR engine. Describe this image in detail, transcribing all text, labels, structures, charts, graphs, or tables word-for-word. Provide a clear, structured textual description without repeating sentences or phrases. Avoid looping or duplicating descriptive statements."
+              text: "You are an advanced document analyst and OCR engine. Describe this image in detail, transcribing all text, mathematical formulas, labels, structures, charts, graphs, or tables word-for-word. When transcribing mathematical formulas, equations, or expressions, transcribe them in standard LaTeX syntax (using $$ ... $$ for display equations and $ ... $ for inline math). Provide a clear, structured textual description without repeating sentences or phrases. Avoid looping or duplicating descriptive statements."
             },
             {
               type: "image_url",
@@ -74,7 +132,7 @@ async function callVisionAPI(url, model, apiKey, file, base64Data) {
   });
 
   if (!response.ok) {
-    const err = await response.json();
+    const err = await response.json().catch(() => ({}));
     throw new Error(err.error?.message || `${model} vision completions failed.`);
   }
 
@@ -82,7 +140,7 @@ async function callVisionAPI(url, model, apiKey, file, base64Data) {
   return resData.choices[0].message.content;
 }
 
-// Describe/transcribe image content using Vision LLM (Groq Llama 4/3.2 Vision / OpenAI GPT-4o-mini)
+// Describe/transcribe image content using Vision LLM (Groq Qwen 3.8/3.6 Vision / OpenAI GPT-4o-mini)
 async function extractTextFromImage(file, provider, apiKey, modelName) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -93,9 +151,8 @@ async function extractTextFromImage(file, provider, apiKey, modelName) {
         
         if (provider === 'groq') {
           const url = "https://api.groq.com/openai/v1/chat/completions";
-          // Try newer vision models first, then fallback to others
           const groqVisionModels = [
-            'meta-llama/llama-4-scout-17b-16e-instruct',
+            'qwen/qwen3.8-27b',
             'qwen/qwen3.6-27b'
           ];
           
@@ -131,33 +188,46 @@ async function extractTextFromImage(file, provider, apiKey, modelName) {
   });
 }
 
-// Chunking: Recursive Character Text Splitter equivalent
+// Context-Aware Recursive Character Text Splitter with Page Boundary Support
 function splitTextIntoChunks(text, sourceName, docType, pageNum = null, chunkSize = 800, chunkOverlap = 150) {
   const chunks = [];
+  if (!text || !text.trim()) return chunks;
+
   let start = 0;
+  const textLen = text.length;
   
-  while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
+  while (start < textLen) {
+    const end = Math.min(start + chunkSize, textLen);
     let chunkText = text.substring(start, end);
     
     // Adjust boundary to sentence/paragraph end space if possible
-    if (end < text.length) {
+    if (end < textLen) {
+      const lastDoubleBreak = chunkText.lastIndexOf('\n\n');
+      const lastPeriod = chunkText.lastIndexOf('. ');
       const lastSpace = chunkText.lastIndexOf(' ');
-      if (lastSpace > chunkSize - 150) {
+      
+      if (lastDoubleBreak > chunkSize - 200) {
+        chunkText = chunkText.substring(0, lastDoubleBreak);
+      } else if (lastPeriod > chunkSize - 180) {
+        chunkText = chunkText.substring(0, lastPeriod + 1);
+      } else if (lastSpace > chunkSize - 150) {
         chunkText = chunkText.substring(0, lastSpace);
       }
     }
+
+    const trimmed = chunkText.trim();
+    if (trimmed.length > 20) {
+      chunks.push({
+        content: trimmed,
+        metadata: {
+          source: sourceName,
+          type: docType,
+          page: pageNum
+        }
+      });
+    }
     
-    chunks.push({
-      content: chunkText,
-      metadata: {
-        source: sourceName,
-        type: docType,
-        page: pageNum
-      }
-    });
-    
-    start += (chunkText.length - chunkOverlap);
+    start += Math.max(1, chunkText.length - chunkOverlap);
     if (chunkText.length <= chunkOverlap) {
       break;
     }
@@ -165,77 +235,69 @@ function splitTextIntoChunks(text, sourceName, docType, pageNum = null, chunkSiz
   return chunks;
 }
 
-// TF-IDF / BM25 Search Engine in pure JS
-function searchChunks(query, chunks, k = 5) {
-  if (chunks.length === 0) return [];
-  
-  // Tokenize and clean query
-  const queryTerms = query.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean);
-  if (queryTerms.length === 0) return chunks.slice(0, k);
-
-  const scores = chunks.map(chunk => {
-    const contentLower = chunk.content.toLowerCase();
-    let score = 0;
-    
-    queryTerms.forEach(term => {
-      // Find term occurrences
-      const occurrences = (contentLower.match(new RegExp(term, 'g')) || []).length;
-      if (occurrences > 0) {
-        // Term Frequency (TF) term - logarithmic scaling
-        const tf = 1 + Math.log(occurrences);
-        
-        // Inverse Document Frequency (IDF) term
-        const docsWithTerm = chunks.filter(c => c.content.toLowerCase().includes(term)).length;
-        const idf = Math.log(1 + chunks.length / (docsWithTerm || 1));
-        
-        score += tf * idf;
-      }
-    });
-    
-    return { chunk, score };
-  });
-
-  // Sort and filter chunks that have some match
-  const matched = scores
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map(item => item.chunk);
-
-  // Fallback to top k chunks if no keyword matches
-  if (matched.length === 0) {
-    return chunks.slice(0, k);
-  }
-  
-  return matched.slice(0, k);
-}
-
 // Call External LLM API directly from the browser
 async function callLLM(provider, apiKey, modelName, messages, temperature) {
+  let effectiveApiKey = (apiKey || '').trim();
+  if (!effectiveApiKey) {
+    if (provider === 'groq') {
+      effectiveApiKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_groq') || '').trim();
+    } else if (provider === 'openai') {
+      effectiveApiKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_openai') || '').trim();
+    } else if (provider === 'huggingface') {
+      effectiveApiKey = (import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_huggingface') || '').trim();
+    }
+  }
+
   if (provider === 'groq') {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    let effectiveModel = modelName;
+    // Auto-migrate any deprecated model names
+    if (!effectiveModel || effectiveModel.includes('llama-3.3') || effectiveModel.includes('llama-3.1') || effectiveModel.includes('llama-4-scout') || effectiveModel.includes('mixtral')) {
+      effectiveModel = 'qwen/qwen3.8-27b';
+    }
+
+    const payload = {
+      model: effectiveModel,
+      messages: messages,
+      temperature: temperature
+    };
+
+    let response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${effectiveApiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: modelName,
-        messages: messages,
-        temperature: temperature
-      })
+      body: JSON.stringify(payload)
     });
+
+    // If selected model fails or is unavailable on Groq, fallback to qwen/qwen3.8-27b
+    if (!response.ok && effectiveModel !== 'qwen/qwen3.8-27b') {
+      console.warn(`Model ${effectiveModel} returned status ${response.status}. Falling back to qwen/qwen3.8-27b...`);
+      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${effectiveApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          ...payload,
+          model: 'qwen/qwen3.8-27b'
+        })
+      });
+    }
+
     if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error?.message || "Groq API error");
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Groq API error (${response.status})`);
     }
     const data = await response.json();
     return data.choices[0].message.content;
-  } 
+  }
   else if (provider === 'openai') {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${effectiveApiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -327,6 +389,7 @@ export default function App() {
   const [allChunks, setAllChunks] = useState([]);
   const [messages, setMessages] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAuthorOpen, setIsAuthorOpen] = useState(false);
@@ -336,6 +399,17 @@ export default function App() {
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [sessionImageUrls, setSessionImageUrls] = useState({});
+
+  // Inverted index reference for sub-millisecond BM25 retrieval
+  const invertedIndexRef = useRef(null);
+
+  useEffect(() => {
+    if (allChunks.length > 0) {
+      invertedIndexRef.current = buildInvertedIndex(allChunks);
+    } else {
+      invertedIndexRef.current = null;
+    }
+  }, [allChunks]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -351,36 +425,56 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
-  // Initialize settings with fallback defaults, locally stored API keys and backend URL
+  // Initialize settings with fallback defaults, locally stored API keys, env vars, and backend URL
   const [settings, setSettings] = useState(() => {
     const provider = 'groq';
+    const envKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim();
+    const envElevenKey = (import.meta.env.VITE_ELEVENLABS_API_KEY || '').trim();
+    
+    // Auto-migrate legacy model name
+    let storedModel = safeStorage.getItem('neurolens_model_name') || 'qwen/qwen3.8-27b';
+    if (!storedModel || storedModel.includes('llama-3.3') || storedModel.includes('llama-3.1') || storedModel.includes('llama-4-scout') || storedModel.includes('mixtral')) {
+      storedModel = 'qwen/qwen3.8-27b';
+      safeStorage.setItem('neurolens_model_name', storedModel);
+    }
+
+    const storedKey = (safeStorage.getItem(`neurolens_key_${provider}`) || '').trim();
+    const effectiveKey = storedKey || envKey;
+    if (effectiveKey && !storedKey) {
+      safeStorage.setItem(`neurolens_key_${provider}`, effectiveKey);
+    }
+
     return {
       provider,
-      apiKey: safeStorage.getItem(`neurolens_key_${provider}`) || '',
-      modelName: 'llama-3.3-70b-versatile',
+      apiKey: effectiveKey,
+      modelName: storedModel,
       temperature: 0.3,
       k: 5,
       backendUrl: safeStorage.getItem('neurolens_backend_url') || '',
-      elevenLabsApiKey: safeStorage.getItem('neurolens_key_elevenlabs') || ''
+      elevenLabsApiKey: (safeStorage.getItem('neurolens_key_elevenlabs') || '').trim() || envElevenKey
     };
   });
 
-  // Load documents and chunks from session storage or local storage if desired
+  // Restore documents and chunks from high-capacity IndexedDB (with fallback to localStorage)
   useEffect(() => {
-    const storedDocs = safeStorage.getItem('neurolens_docs');
-    const storedChunks = safeStorage.getItem('neurolens_chunks');
-    if (storedDocs && storedChunks) {
+    async function restoreFromDatabase() {
       try {
-        setDocuments(JSON.parse(storedDocs));
-        setAllChunks(JSON.parse(storedChunks));
+        const storedDocs = await indexedStorage.getItem('neurolens_docs');
+        const storedChunks = await indexedStorage.getItem('neurolens_chunks');
+        if (storedDocs && storedChunks && Array.isArray(storedDocs) && Array.isArray(storedChunks)) {
+          setDocuments(storedDocs);
+          setAllChunks(storedChunks);
+        }
       } catch (e) {
-        console.error("Failed to restore indexed files:", e);
+        console.error("Failed to restore indexed files from database:", e);
       }
     }
+    restoreFromDatabase();
   }, []);
 
   const handleUpload = async (files) => {
     setIsUploading(true);
+    setUploadProgress(null);
     try {
       const newDocs = [];
       const newChunks = [];
@@ -396,6 +490,14 @@ export default function App() {
         
         const isImage = ['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext);
         if (isImage) {
+          setUploadProgress({
+            fileName: filename,
+            current: 1,
+            total: 1,
+            percent: 50,
+            phase: 'Analyzing visual content via Vision LLM...'
+          });
+
           // Read as data URL to store in sessionImageUrls for previewing
           try {
             const dataUrl = await new Promise((resolve, reject) => {
@@ -409,12 +511,15 @@ export default function App() {
             console.warn("Failed to read image as Data URL for preview", e);
           }
 
-          let resolvedKey = settings.apiKey;
+          let resolvedKey = (settings.apiKey || '').trim();
+          if (!resolvedKey) {
+            resolvedKey = (safeStorage.getItem(`neurolens_key_${settings.provider}`) || '').trim();
+          }
           if (!resolvedKey) {
             if (settings.provider === 'groq') {
-              resolvedKey = import.meta.env.VITE_GROQ_API_KEY || '';
+              resolvedKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim();
             } else if (settings.provider === 'openai') {
-              resolvedKey = import.meta.env.VITE_OPENAI_API_KEY || '';
+              resolvedKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim();
             }
           }
           if (!resolvedKey) {
@@ -435,15 +540,53 @@ export default function App() {
           });
 
           if (ext === '.pdf') {
-            pagesText = await parsePDF(arrayBuffer);
+            setUploadProgress({
+              fileName: filename,
+              current: 0,
+              total: 1,
+              percent: 5,
+              phase: 'Opening multi-page PDF document...'
+            });
+
+            pagesText = await parsePDF(arrayBuffer, (p) => {
+              setUploadProgress({
+                fileName: filename,
+                current: p.current,
+                total: p.total,
+                percent: p.percent,
+                phase: `Extracting page ${p.current} of ${p.total}`
+              });
+            });
           } else if (ext === '.docx' || ext === '.doc') {
+            setUploadProgress({
+              fileName: filename,
+              current: 1,
+              total: 1,
+              percent: 50,
+              phase: 'Parsing Word document structure...'
+            });
             pagesText = await parseDOCX(arrayBuffer);
           } else {
             // Default to plain text parsing
+            setUploadProgress({
+              fileName: filename,
+              current: 1,
+              total: 1,
+              percent: 50,
+              phase: 'Reading text file lines...'
+            });
             const text = new TextDecoder("utf-8").decode(arrayBuffer);
             pagesText = [{ text, page: null }];
           }
         }
+
+        setUploadProgress({
+          fileName: filename,
+          current: pagesText.length,
+          total: pagesText.length,
+          percent: 95,
+          phase: 'Partitioning chunks & indexing...'
+        });
 
         // Split pages/blocks into chunks
         pagesText.forEach(item => {
@@ -464,15 +607,15 @@ export default function App() {
       setDocuments(updatedDocs);
       setAllChunks(updatedChunks);
 
-      // Persist documents in localStorage
-      safeStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
-      safeStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+      // Persist documents in IndexedDB (handles gigabytes without 5MB quota errors)
+      await indexedStorage.setItem('neurolens_docs', updatedDocs);
+      await indexedStorage.setItem('neurolens_chunks', updatedChunks);
 
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content: `📥 **System:** Successfully processed and indexed **${files.length}** new document(s) directly in your browser. You can now ask questions based on these files.`,
+          content: `📥 **System:** Successfully processed and indexed **${files.length}** new document(s) directly in your browser (${newChunks.length} chunks generated). You can now ask questions based on these files.`,
           sources: []
         }
       ]);
@@ -481,6 +624,7 @@ export default function App() {
       alert(`Upload failed: ${error.message}`);
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -639,9 +783,9 @@ export default function App() {
       setDocuments(updatedDocs);
       setAllChunks(updatedChunks);
 
-      // Persist
-      safeStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
-      safeStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+      // Persist in IndexedDB
+      await indexedStorage.setItem('neurolens_docs', updatedDocs);
+      await indexedStorage.setItem('neurolens_chunks', updatedChunks);
 
       setMessages(prev => [
         ...prev,
@@ -665,15 +809,18 @@ export default function App() {
     setIsGenerating(true);
 
     try {
-      // Resolve API key: check settings first, then check build-time env vars as fallbacks
-      let resolvedKey = settings.apiKey;
+      // Resolve API key: check settings first, then local storage, then build-time env vars as fallbacks
+      let resolvedKey = (settings.apiKey || '').trim();
+      if (!resolvedKey) {
+        resolvedKey = (safeStorage.getItem(`neurolens_key_${settings.provider}`) || '').trim();
+      }
       if (!resolvedKey) {
         if (settings.provider === 'groq') {
-          resolvedKey = import.meta.env.VITE_GROQ_API_KEY || '';
+          resolvedKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim();
         } else if (settings.provider === 'openai') {
-          resolvedKey = import.meta.env.VITE_OPENAI_API_KEY || '';
+          resolvedKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim();
         } else if (settings.provider === 'huggingface') {
-          resolvedKey = import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || '';
+          resolvedKey = (import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || '').trim();
         }
       }
 
@@ -706,6 +853,13 @@ export default function App() {
         "- [LinkedIn Profile](https://www.linkedin.com/in/uditya-narayan-tiwari-562332289/)\n" +
         "- [Knowledge Base](https://udityaknowledgebase.netlify.app/)\n\n";
 
+      const mathInstruction = 
+        "\n\nMATHEMATICAL FORMULAS & NOTATION INSTRUCTIONS:\n" +
+        "When writing mathematical expressions, equations, formulas, derivatives, matrices, or scientific notations, ALWAYS use standard LaTeX syntax:\n" +
+        "- For display or multiline equations/matrices, wrap them in double dollar signs on separate lines: $$ <formula> $$\n" +
+        "- For inline variables, numbers with units, or short math symbols, wrap them in single dollar signs: $ <symbol> $\n" +
+        "- Use standard LaTeX environments such as \\begin{cases} ... \\end{cases}, \\frac{a}{b}, \\partial, \\sum, \\int, \\matrix, etc. Never output pseudo-math or plain text approximations when LaTeX is appropriate.";
+
       if (allChunks.length > 0) {
         // 1. Generate standalone query using chat history context
         const searchQuery = await generateStandaloneQuery(
@@ -716,8 +870,12 @@ export default function App() {
           settings.modelName
         );
 
-        // 2. Perform client-side retrieval
-        relevantChunks = searchChunks(searchQuery, allChunks, settings.k);
+        // 2. High-speed BM25 / Stratified multi-page retrieval
+        if (isSummaryQuery(queryText) || isSummaryQuery(searchQuery)) {
+          relevantChunks = getStratifiedSummaryChunks(searchQuery, allChunks, invertedIndexRef.current, Math.max(settings.k, 8));
+        } else {
+          relevantChunks = searchBM25(searchQuery, allChunks, invertedIndexRef.current, settings.k);
+        }
 
         // 3. Format system prompt context
         let contextStr = "";
@@ -733,7 +891,8 @@ export default function App() {
             "In addition to answering from the documents, when asked about your creator, developer, programmer, builder, or asked to study your author/projects, you must respond with his real resume profile:\n\n" +
             `${developerBio}` +
             "Explain that you are analyzing the documents loaded into your library, but first proudly introduce Uditya Narayan Tiwari as your creator.\n\n" +
-            `Here is the context from the documents:\n\n${contextStr}`;
+            `Here is the context from the documents:\n\n${contextStr}` +
+            mathInstruction;
         } else {
           systemPrompt = 
             "You are NeuroLens, an advanced AI document analyst. " +
@@ -741,7 +900,8 @@ export default function App() {
             "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). " +
             "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. " +
             "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n" +
-            `Here is the context retrieved from the documents:\n\n${contextStr}`;
+            `Here is the context retrieved from the documents:\n\n${contextStr}` +
+            mathInstruction;
         }
       } else {
         if (isAskingAboutAuthorStudy || isAskingAboutCreator) {
@@ -749,12 +909,14 @@ export default function App() {
             "You are NeuroLens, an advanced AI document intelligence engine. " +
             "When asked about your creator, developer, programmer, or builder, or asked to study your author/projects, you must answer with his real resume profile:\n\n" +
             `${developerBio}` +
-            "Present this information with extreme professionalism and pride in Uditya's engineering.";
+            "Present this information with extreme professionalism and pride in Uditya's engineering." +
+            mathInstruction;
         } else {
           systemPrompt = 
             "You are NeuroLens, an advanced AI assistant. " +
             "Respond to the user's question helpfully and clearly. " +
-            "Respond in the same language as the user's question.";
+            "Respond in the same language as the user's question." +
+            mathInstruction;
         }
       }
 
@@ -815,11 +977,10 @@ export default function App() {
     setDocuments([]);
     setAllChunks([]);
     setMessages([]);
-    safeStorage.removeItem('neurolens_docs');
-    safeStorage.removeItem('neurolens_chunks');
+    await indexedStorage.clear();
   };
 
-  const handleDeleteDocument = (docName) => {
+  const handleDeleteDocument = async (docName) => {
     if (!window.confirm(`Are you sure you want to delete "${docName}" from the library?`)) {
       return;
     }
@@ -829,8 +990,8 @@ export default function App() {
     setDocuments(updatedDocs);
     setAllChunks(updatedChunks);
 
-    safeStorage.setItem('neurolens_docs', JSON.stringify(updatedDocs));
-    safeStorage.setItem('neurolens_chunks', JSON.stringify(updatedChunks));
+    await indexedStorage.setItem('neurolens_docs', updatedDocs);
+    await indexedStorage.setItem('neurolens_chunks', updatedChunks);
 
     setMessages(prev => [
       ...prev,
@@ -885,6 +1046,8 @@ export default function App() {
           onDeleteDocument={handleDeleteDocument}
           isUploading={isUploading}
           isFetchingUrl={isFetchingUrl}
+          uploadProgress={uploadProgress}
+          allChunks={allChunks}
         />
       </div>
 

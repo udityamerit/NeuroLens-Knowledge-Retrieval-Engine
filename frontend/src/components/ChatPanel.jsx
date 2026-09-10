@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { formatStructuredMessage } from './MathRenderer';
 
 export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar, backendUrl, elevenLabsApiKey }) {
   const [query, setQuery] = useState('');
@@ -349,6 +350,12 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
         .replace(/📥 \*\*System:\*\*/g, '')
         .replace(/❌ \*\*Error running query:\*\*/g, '')
         .replace(/\[Source \d+\]/g, '')
+        .replace(/\$\$[\s\S]*?\$\$/g, ' mathematical formula ')
+        .replace(/\\\[[\s\S]*?\\\]/g, ' mathematical formula ')
+        .replace(/\\begin\{[\s\S]*?\\end\{[\s\S]*?\}/g, ' mathematical formula ')
+        .replace(/\$(?!\s)([^\$\n]+?)(?<!\s)\$/g, ' formula ')
+        .replace(/\\\([\s\S]*?\\\)/g, ' formula ')
+        .replace(/```[\s\S]*?```/g, ' code block ')
         .replace(/\*\*|`|\*/g, '')
         .replace(/###|##|#/g, '')
         .trim();
@@ -622,192 +629,9 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
     onSendQuery(text);
   };
 
-  // Helper to format source tags in text (e.g., converting [Source 1] into a glowing tag)
+  // Helper to format text with full KaTeX LaTeX math expressions, code blocks, tables, and markdown
   const formatMessageText = (text) => {
-    if (!text) return '';
-    
-    // Helper to render inline formatting: bold (**), italic (*), code (`), source tags ([Source X]), and Markdown links ([text](url))
-    const renderInline = (inlineText) => {
-      if (!inlineText) return '';
-      
-      // Regex to split on bold, italic, code, source tags, and markdown links
-      const inlineRegex = /(\*\*.*?\*\*|\*.*?\*|`.*?`|\[Source \d+\]|\[[^\]]+\]\([^)]+\))/g;
-      const parts = inlineText.split(inlineRegex);
-      
-      return parts.map((part, idx) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={idx} style={{ color: '#ffffff', fontWeight: '700' }}>{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith('*') && part.endsWith('*')) {
-          return <em key={idx} style={{ color: '#cbd5e1', fontStyle: 'italic' }}>{part.slice(1, -1)}</em>;
-        }
-        if (part.startsWith('`') && part.endsWith('`')) {
-          return (
-            <code 
-              key={idx} 
-              style={{
-                fontFamily: 'var(--font-mono)',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontSize: '12.5px',
-                color: 'var(--color-secondary)',
-                wordBreak: 'break-all'
-              }}
-            >
-              {part.slice(1, -1)}
-            </code>
-          );
-        }
-        if (part.match(/^\[Source \d+\]$/)) {
-          return (
-            <span 
-              key={idx} 
-              style={{
-                background: 'rgba(0, 245, 212, 0.12)',
-                border: '1px solid rgba(0, 245, 212, 0.3)',
-                color: 'var(--color-secondary)',
-                padding: '1px 5px',
-                borderRadius: '4px',
-                fontSize: '11px',
-                fontWeight: '600',
-                margin: '0 2px',
-                display: 'inline-block',
-                boxShadow: '0 0 4px rgba(0, 245, 212, 0.2)'
-              }}
-            >
-              {part}
-            </span>
-          );
-        }
-        if (part.startsWith('[') && part.includes('](')) {
-          const closingBracketIdx = part.indexOf('](');
-          const label = part.substring(1, closingBracketIdx);
-          const url = part.substring(closingBracketIdx + 2, part.length - 1);
-          return (
-            <a
-              key={idx}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                color: '#00f5d4',
-                textDecoration: 'underline',
-                fontWeight: '600',
-                transition: 'color 0.2s'
-              }}
-              onMouseOver={(e) => e.target.style.color = '#9d4edd'}
-              onMouseOut={(e) => e.target.style.color = '#00f5d4'}
-            >
-              {label}
-            </a>
-          );
-        }
-        return part;
-      });
-    };
-
-    // Split text into lines to process block structures
-    const lines = text.split('\n');
-    const elements = [];
-    let listItems = [];
-    let insideList = false;
-    let listType = null; // 'unordered' or 'ordered'
-
-    const flushList = (key) => {
-      if (listItems.length > 0) {
-        if (listType === 'ordered') {
-          elements.push(
-            <ol key={key} style={{ marginLeft: '20px', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {listItems}
-            </ol>
-          );
-        } else {
-          elements.push(
-            <ul key={key} style={{ marginLeft: '20px', marginBottom: '12px', listStyleType: 'disc', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {listItems}
-            </ul>
-          );
-        }
-        listItems = [];
-        insideList = false;
-        listType = null;
-      }
-    };
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      // Check for headers (e.g., ### header)
-      if (trimmed.startsWith('### ')) {
-        flushList(`list-before-h3-${i}`);
-        elements.push(
-          <h3 key={`h3-${i}`} style={{ fontFamily: 'var(--font-heading)', color: '#ffffff', fontSize: '15px', fontWeight: '700', marginTop: '14px', marginBottom: '8px' }}>
-            {renderInline(trimmed.substring(4))}
-          </h3>
-        );
-        continue;
-      }
-      if (trimmed.startsWith('## ')) {
-        flushList(`list-before-h2-${i}`);
-        elements.push(
-          <h2 key={`h2-${i}`} style={{ fontFamily: 'var(--font-heading)', color: '#ffffff', fontSize: '17px', fontWeight: '700', marginTop: '18px', marginBottom: '10px' }}>
-            {renderInline(trimmed.substring(3))}
-          </h2>
-        );
-        continue;
-      }
-      if (trimmed.startsWith('# ')) {
-        flushList(`list-before-h1-${i}`);
-        elements.push(
-          <h1 key={`h1-${i}`} style={{ fontFamily: 'var(--font-heading)', color: '#ffffff', fontSize: '19px', fontWeight: '800', marginTop: '20px', marginBottom: '12px' }}>
-            {renderInline(trimmed.substring(2))}
-          </h1>
-        );
-        continue;
-      }
-
-      // Check for bullet lists
-      const isBulletList = trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ');
-      // Check for ordered lists
-      const isOrderedList = /^\d+\.\s/.test(trimmed);
-
-      if (isBulletList || isOrderedList) {
-        const currentType = isOrderedList ? 'ordered' : 'unordered';
-        if (insideList && listType !== currentType) {
-          flushList(`list-type-change-${i}`);
-        }
-        
-        insideList = true;
-        listType = currentType;
-        
-        const content = isOrderedList 
-          ? trimmed.substring(trimmed.indexOf('.') + 1).trim()
-          : trimmed.substring(2).trim();
-          
-        listItems.push(
-          <li key={`li-${i}`} style={{ fontSize: '14px', lineHeight: '160%', color: 'var(--text-main)', paddingLeft: '4px' }}>
-            {renderInline(content)}
-          </li>
-        );
-      } else if (trimmed === '') {
-        flushList(`list-empty-${i}`);
-        // Add a line break spacer for paragraphs
-        elements.push(<div key={`spacer-${i}`} style={{ height: '8px' }} />);
-      } else {
-        flushList(`list-text-${i}`);
-        elements.push(
-          <p key={`p-${i}`} style={{ fontSize: '14px', lineHeight: '160%', color: 'var(--text-main)', marginBottom: '8px' }}>
-            {renderInline(line)}
-          </p>
-        );
-      }
-    }
-
-    flushList('list-end');
-    return elements;
+    return formatStructuredMessage(text);
   };
 
   return (
@@ -983,7 +807,7 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
               >
                 {/* Bubble Text */}
                 <div style={styles.bubbleText}>
-                  {msg.role === 'user' ? msg.content : formatMessageText(msg.content)}
+                  {formatMessageText(msg.content)}
                 </div>
 
                 {/* Assistant Control Actions (Speak & Sources) */}

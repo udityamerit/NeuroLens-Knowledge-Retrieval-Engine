@@ -500,3 +500,158 @@ body {
   box-shadow: 0 0 12px rgba(0, 245, 212, 0.08);
   transform: translateX(2px);
 }
+
+/* ==========================================================================
+   KaTeX & LaTeX Mathematical Typography Styling (Holographic Sci-Fi Theme)
+   ========================================================================== */
+.katex {
+  font-size: 1.08em;
+  color: #f1f5f9;
+}
+
+.katex-display {
+  margin: 0 !important;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.katex-math-card {
+  position: relative;
+  margin: 14px 0;
+  padding: 14px 18px;
+  background: rgba(10, 15, 30, 0.88);
+  border: 1px solid rgba(0, 245, 212, 0.28);
+  border-left: 3.5px solid var(--color-secondary, #00f5d4);
+  border-radius: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 0 16px rgba(0, 245, 212, 0.03);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.katex-math-card:hover {
+  border-color: rgba(0, 245, 212, 0.55);
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.5), 0 0 16px rgba(0, 245, 212, 0.18);
+}
+
+.katex-math-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.katex-math-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  color: var(--color-secondary, #00f5d4);
+  background: rgba(0, 245, 212, 0.12);
+  border: 1px solid rgba(0, 245, 212, 0.3);
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.katex-copy-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94a3b8;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+}
+
+.katex-copy-btn:hover {
+  color: #ffffff;
+  border-color: var(--color-secondary);
+  background: rgba(0, 245, 212, 0.12);
+}
+
+.katex-inline-math {
+  display: inline-block;
+  padding: 1px 5px;
+  margin: 0 2px;
+  background: rgba(0, 245, 212, 0.06);
+  border: 1px solid rgba(0, 245, 212, 0.18);
+  border-radius: 4px;
+  color: #f1f5f9;
+  vertical-align: middle;
+}
+
+/* Fenced Code Blocks */
+.code-block-card {
+  margin: 14px 0;
+  background: #080a14;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: #94a3b8;
+}
+
+.code-block-body {
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  color: #e2e8f0;
+  white-space: pre;
+}
+
+/* Markdown Tables */
+.markdown-table-card {
+  margin: 14px 0;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 14, 28, 0.7);
+}
+
+.markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.markdown-table th {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-bottom: 2px solid rgba(0, 245, 212, 0.35);
+}
+
+.markdown-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+}
+
+.markdown-table tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}

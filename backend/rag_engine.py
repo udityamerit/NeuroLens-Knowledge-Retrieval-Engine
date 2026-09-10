@@ -68,18 +68,38 @@ class RAGEngine:
             try:
                 with open(file_path, "rb") as f:
                     reader = pypdf.PdfReader(f)
-                    for page_idx, page in enumerate(reader.pages):
-                        text = page.extract_text()
-                        if text and text.strip():
-                            documents.append(Document(
-                                page_content=text,
-                                metadata={
-                                    "source": filename,
-                                    "page": page_idx + 1,
-                                    "type": "pdf"
-                                }
-                            ))
-                print(f"  Processed PDF: {len(reader.pages)} pages, extracted {len(documents)} document pages.")
+                    total_pages = len(reader.pages)
+                    
+                    def extract_single_page(idx):
+                        try:
+                            p = reader.pages[idx]
+                            t = p.extract_text()
+                            if t and t.strip():
+                                return Document(
+                                    page_content=t.strip(),
+                                    metadata={
+                                        "source": filename,
+                                        "page": idx + 1,
+                                        "type": "pdf"
+                                    }
+                                )
+                        except Exception:
+                            return None
+                        return None
+
+                    # If multi-page PDF, process pages in parallel threads for maximum throughput
+                    if total_pages > 4:
+                        from concurrent.futures import ThreadPoolExecutor
+                        with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as executor:
+                            results = list(executor.map(extract_single_page, range(total_pages)))
+                        documents = [doc for doc in results if doc is not None]
+                    else:
+                        for page_idx in range(total_pages):
+                            doc = extract_single_page(page_idx)
+                            if doc:
+                                documents.append(doc)
+
+                print(f"  Processed PDF: {total_pages} pages, extracted {len(documents)} document pages.")
             except Exception as e:
                 import traceback
                 print(f"  ❌ Error reading PDF {filename}:")
@@ -147,7 +167,7 @@ class RAGEngine:
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     }
                     groq_models = [
-                        "meta-llama/llama-4-scout-17b-16e-instruct",
+                        "qwen/qwen3.8-27b",
                         "qwen/qwen3.6-27b"
                     ]
                     
@@ -288,7 +308,10 @@ class RAGEngine:
         if self.vector_store is None:
             self.vector_store = FAISS.from_documents(chunks, self.embeddings)
         else:
-            self.vector_store.add_documents(chunks)
+            # Batch document additions to prevent memory spikes on large collections
+            batch_size = 128
+            for i in range(0, len(chunks), batch_size):
+                self.vector_store.add_documents(chunks[i:i + batch_size])
 
         # Save index locally
         os.makedirs(self.index_dir, exist_ok=True)
@@ -371,9 +394,12 @@ class RAGEngine:
         try:
             if provider.lower() == "groq":
                 from langchain_groq import ChatGroq
+                effective_model = model_name
+                if not effective_model or any(dep in effective_model.lower() for dep in ["llama-3", "llama3", "llama-4-scout", "mixtral", "gemma"]):
+                    effective_model = "qwen/qwen3.8-27b"
                 llm = ChatGroq(
                     api_key=api_key,
-                    model_name=model_name,
+                    model_name=effective_model,
                     temperature=0.0
                 )
                 response = llm.invoke([
@@ -456,6 +482,14 @@ class RAGEngine:
             "- [Knowledge Base](https://udityaknowledgebase.netlify.app/)\n\n"
         )
 
+        math_instructions = (
+            "\n\nMATHEMATICAL FORMULAS & NOTATION INSTRUCTIONS:\n"
+            "When outputting mathematical expressions, equations, formulas, derivatives, matrices, or scientific notations, ALWAYS use standard LaTeX syntax:\n"
+            "- For display or multiline equations/matrices, wrap them in double dollar signs on separate lines: $$ <formula> $$\n"
+            "- For inline variables, numbers with units, or short math symbols, wrap them in single dollar signs: $ <symbol> $\n"
+            "- Use standard LaTeX environments such as \\begin{cases} ... \\end{cases}, \\frac{a}{b}, \\partial, \\sum, \\int, \\matrix, etc. Never output pseudo-math or plain text approximations when LaTeX is appropriate."
+        )
+
         if not relevant_chunks:
             if is_asking_about_author_study or is_asking_about_creator:
                 system_prompt = (
@@ -463,12 +497,14 @@ class RAGEngine:
                     "When asked about your creator, developer, programmer, or builder, or asked to study your author/projects, you must answer with his real resume profile:\n\n"
                     f"{developer_bio}"
                     "Respond with extreme professionalism and pride in Uditya's engineering work."
+                    f"{math_instructions}"
                 )
             else:
                 system_prompt = (
                     "You are NeuroLens, an advanced AI assistant. "
                     "Respond to the user's question helpfully and clearly. "
                     "Respond in the same language as the user's question."
+                    f"{math_instructions}"
                 )
         else:
             # 4. Build prompt context
@@ -485,6 +521,7 @@ class RAGEngine:
                     f"{developer_bio}"
                     "Explain that you are analyzing the documents loaded into your library, but first proudly introduce Uditya Narayan Tiwari as your creator.\n\n"
                     f"Here is the context from the documents:\n\n{context_str}"
+                    f"{math_instructions}"
                 )
             else:
                 system_prompt = (
@@ -494,6 +531,7 @@ class RAGEngine:
                     "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. "
                     "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n"
                     f"Here is the context retrieved from the documents:\n\n{context_str}"
+                    f"{math_instructions}"
                 )
 
         # 5. Call LLM
@@ -503,9 +541,12 @@ class RAGEngine:
                 if not resolved_key:
                     raise ValueError("Groq API key not found. Please provide it in Settings.")
                 from langchain_groq import ChatGroq
+                effective_model = model_name
+                if not effective_model or any(dep in effective_model.lower() for dep in ["llama-3", "llama3", "llama-4-scout", "mixtral", "gemma"]):
+                    effective_model = "qwen/qwen3.8-27b"
                 llm = ChatGroq(
                     api_key=resolved_key,
-                    model_name=model_name,
+                    model_name=effective_model,
                     temperature=temperature
                 )
                 

@@ -50,3 +50,7 @@ backend/faiss_index/
 *.sw?
 .DS_Store
 Thumbs.db
+
+# Project Context & Memory
+memory.md
+scratch/

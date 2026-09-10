@@ -269,6 +269,19 @@ async def get_documents():
     """Lists all currently indexed document filenames."""
     return {"documents": rag_engine.uploaded_files}
 
+@app.get("/api/documents/stats")
+async def get_document_stats():
+    """Returns database size, chunk counts, and indexed documents."""
+    total_chunks = 0
+    if rag_engine.vector_store and hasattr(rag_engine.vector_store, "docstore"):
+        total_chunks = len(rag_engine.vector_store.docstore._dict)
+    return {
+        "documents": rag_engine.uploaded_files,
+        "total_documents": len(rag_engine.uploaded_files),
+        "total_chunks": total_chunks,
+        "status": "ready"
+    }
+
 @app.post("/api/clear")
 async def clear_database():
     """Clears the local vector store index and uploads log."""

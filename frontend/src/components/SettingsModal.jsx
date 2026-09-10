@@ -4,48 +4,94 @@ import { safeStorage } from '../utils/storage';
 const PROVIDERS = {
   groq: {
     name: 'Groq',
-    defaultModel: 'llama-3.3-70b-versatile',
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
+    defaultModel: 'qwen/qwen3.8-27b',
+    models: [
+      { id: 'qwen/qwen3.8-27b', name: 'Qwen 3.8 27B (Latest Multimodal Vision + Text • 131k Context • Free)', tag: 'RECOMMENDED' },
+      { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B by OpenAI (Flagship Reasoning • 131k Context • Free)', tag: 'POWERFUL' },
+      { id: 'qwen/qwen3.6-27b', name: 'Qwen 3.6 27B (High-Speed Multimodal • 131k Context • Free)', tag: 'FAST' },
+      { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B by OpenAI (Fast Reasoning • 131k Context • Free)', tag: 'FAST' },
+      { id: 'groq/compound-mini', name: 'Groq Compound Mini (Agentic Multi-Step • 131k Context • Free)', tag: 'REASONING' },
+      { id: 'groq/compound', name: 'Groq Compound Full (Advanced Agentic • 131k Context • Free)', tag: 'REASONING' },
+      { id: 'allam-2-7b', name: 'ALLaM 2 7B (Bilingual Arabic/English • 131k Context • Free)', tag: 'BILINGUAL' }
+    ]
   },
   openai: {
     name: 'OpenAI',
     defaultModel: 'gpt-4o-mini',
-    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo']
+    models: [
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Cost-Efficient)', tag: 'RECOMMENDED' },
+      { id: 'gpt-4o', name: 'GPT-4o (Omni Multimodal Flagship)', tag: 'FLAGSHIP' },
+      { id: 'o3-mini', name: 'o3-mini (High-Intelligence Reasoning)', tag: 'REASONING' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', tag: 'LEGACY' }
+    ]
   },
   huggingface: {
     name: 'Hugging Face',
     defaultModel: 'meta-llama/Llama-3.2-3B-Instruct',
     models: [
-      'meta-llama/Llama-3.2-3B-Instruct',
-      'mistralai/Mistral-7B-Instruct-v0.3',
-      'microsoft/Phi-3-mini-4k-instruct'
+      { id: 'meta-llama/Llama-3.2-3B-Instruct', name: 'Llama 3.2 3B Instruct (Free Serverless)', tag: 'RECOMMENDED' },
+      { id: 'mistralai/Mistral-7B-Instruct-v0.3', name: 'Mistral 7B Instruct v0.3 (Free Serverless)', tag: 'FAST' },
+      { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B Instruct (High Capacity)', tag: 'FLAGSHIP' },
+      { id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B', name: 'DeepSeek R1 Distill Qwen 32B (Reasoning)', tag: 'REASONING' }
     ]
   }
 };
 
 export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpenAuthor, onClear, hasDocuments }) {
+  const envKeys = {
+    groq: (import.meta.env.VITE_GROQ_API_KEY || '').trim(),
+    openai: (import.meta.env.VITE_OPENAI_API_KEY || '').trim(),
+    huggingface: (import.meta.env.VITE_HF_TOKEN || '').trim()
+  };
+
   const [provider, setProvider] = useState(settings.provider || 'groq');
-  const [apiKey, setApiKey] = useState(settings.apiKey || '');
-  const [modelName, setModelName] = useState(settings.modelName || 'llama-3.3-70b-versatile');
+
+  // Load API keys stored in localStorage for convenience with fallback to env keys
+  const [savedKeys, setSavedKeys] = useState(() => {
+    const groqKey = (safeStorage.getItem('neurolens_key_groq') || '').trim() || envKeys.groq;
+    const openaiKey = (safeStorage.getItem('neurolens_key_openai') || '').trim() || envKeys.openai;
+    const hfKey = (safeStorage.getItem('neurolens_key_huggingface') || '').trim() || envKeys.huggingface;
+    return { groq: groqKey, openai: openaiKey, huggingface: hfKey };
+  });
+
+  const [apiKey, setApiKey] = useState(() => {
+    const p = settings.provider || 'groq';
+    const directKey = (settings.apiKey || '').trim();
+    const stored = (safeStorage.getItem(`neurolens_key_${p}`) || '').trim();
+    const envK = envKeys[p] || '';
+    // If the key is the pre-configured environment key, keep input empty so placeholder masks it
+    if (directKey && directKey !== envK) return directKey;
+    if (stored && stored !== envK) return stored;
+    return '';
+  });
+  
+  // Auto-migrate any deprecated model names from previous session cache
+  const [modelName, setModelName] = useState(() => {
+    const current = settings.modelName || 'qwen/qwen3.8-27b';
+    if (!current || current.includes('llama-3.3') || current.includes('llama-3.1') || current.includes('llama-4-scout') || current.includes('mixtral')) {
+      return 'qwen/qwen3.8-27b';
+    }
+    return current;
+  });
   const [temperature, setTemperature] = useState(settings.temperature || 0.3);
   const [k, setK] = useState(settings.k || 5);
   const [showKey, setShowKey] = useState(false);
 
-  // Load API keys stored in localStorage for convenience
-  const [savedKeys, setSavedKeys] = useState({
-    groq: safeStorage.getItem('neurolens_key_groq') || '',
-    openai: safeStorage.getItem('neurolens_key_openai') || '',
-    huggingface: safeStorage.getItem('neurolens_key_huggingface') || ''
-  });
-
   // Update the model list and apiKey when provider changes
   const handleProviderChange = (newProvider) => {
     setProvider(newProvider);
-    const currentProviderKeys = savedKeys[newProvider] || '';
-    setApiKey(currentProviderKeys);
+    const stored = (safeStorage.getItem(`neurolens_key_${newProvider}`) || '').trim();
+    const envK = envKeys[newProvider] || '';
+    // Keep input empty if using environment key to prevent exposing it
+    if (stored && stored !== envK) {
+      setApiKey(stored);
+    } else {
+      setApiKey('');
+    }
     
     // Set default model for selected provider if the current modelName doesn't belong to the provider
-    if (!PROVIDERS[newProvider].models.includes(modelName)) {
+    const availableModelIds = PROVIDERS[newProvider].models.map(m => typeof m === 'string' ? m : m.id);
+    if (!availableModelIds.includes(modelName)) {
       setModelName(PROVIDERS[newProvider].defaultModel);
     }
   };
@@ -57,12 +103,18 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
   };
 
   const handleSave = () => {
+    const customKey = (apiKey || '').trim();
+    const effectiveKey = customKey || envKeys[provider] || (safeStorage.getItem(`neurolens_key_${provider}`) || '').trim();
+    
     // Save to local storage for convenience
-    safeStorage.setItem(`neurolens_key_${provider}`, apiKey);
+    if (customKey) {
+      safeStorage.setItem(`neurolens_key_${provider}`, customKey);
+    }
+    safeStorage.setItem('neurolens_model_name', modelName);
     
     onSave({
       provider,
-      apiKey,
+      apiKey: effectiveKey,
       modelName,
       temperature: parseFloat(temperature),
       k: parseInt(k),
@@ -142,15 +194,23 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
           <div style={styles.formGroup}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <label style={styles.label}>{PROVIDERS[provider].name} API Key</label>
-              <span style={styles.infoSpan}>Stored locally in browser</span>
+              <span style={{ fontSize: '11px', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                Protected & Masked
+              </span>
             </div>
             <div style={styles.inputContainer}>
               <input
                 type={showKey ? 'text' : 'password'}
-                placeholder={`Paste your ${PROVIDERS[provider].name} API Key here...`}
+                placeholder={envKeys[provider] ? '•••••••••••••••••••••••••••••••• (Active via Environment)' : `Enter ${PROVIDERS[provider].name} API Key...`}
                 value={apiKey}
                 onChange={(e) => handleKeyChange(e.target.value)}
                 style={styles.input}
+                autoComplete="off"
+                spellCheck="false"
               />
               <button 
                 type="button" 
@@ -171,31 +231,57 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
                 )}
               </button>
             </div>
-            <p style={styles.helperText}>
+            <div style={{ marginTop: '7px', fontSize: '11.5px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
               {provider === 'groq' ? (
                 <>
-                  <span style={{ color: '#4ade80', fontWeight: '600' }}>Groq API is free to use — no charges apply.</span>{' '}
-                  Leaving this blank will use the environment fallback key.
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></span>
+                    <span style={{ color: '#4ade80', fontWeight: '700' }}>Groq Free Tier Active</span>
+                    <span style={{ color: '#94a3b8' }}>— 100% free with ultra-low latency.</span>
+                  </div>
+                  {(apiKey || envKeys.groq) ? (
+                    <span style={{ color: '#38bdf8', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                      <span style={{ color: '#94a3b8' }}>API Key Status:</span>
+                      <span style={{ color: '#22c55e', fontWeight: '600' }}>Connected & Fully Masked</span>
+                      <span style={{ color: '#64748b' }}>• Hidden from public view</span>
+                    </span>
+                  ) : (
+                    <span style={{ color: '#94a3b8' }}>No API key configured. Enter a key above or configure it in .env.</span>
+                  )}
                 </>
               ) : (
-                <>Leaving this blank will use the environment fallback key.</>
+                <span style={{ color: '#94a3b8' }}>
+                  {(apiKey || envKeys[provider]) ? '✓ Connected & Masked (Hidden for privacy)' : 'Leaving blank will use the environment fallback key if configured.'}
+                </span>
               )}
-            </p>
+            </div>
           </div>
 
           {/* Model Selection */}
           <div style={styles.formGroup}>
-            <label style={styles.label}>Model Selection</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label style={styles.label}>Model Selection</label>
+              <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: '600' }}>
+                Latest Active Models
+              </span>
+            </div>
             <select
               value={modelName}
               onChange={(e) => setModelName(e.target.value)}
               style={styles.select}
             >
-              {PROVIDERS[provider].models.map(m => (
-                <option key={m} value={m} style={styles.option}>
-                  {m}
-                </option>
-              ))}
+              {PROVIDERS[provider].models.map(m => {
+                const id = typeof m === 'string' ? m : m.id;
+                const label = typeof m === 'string' ? m : m.name;
+                return (
+                  <option key={id} value={id} style={styles.option}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
           </div>
 

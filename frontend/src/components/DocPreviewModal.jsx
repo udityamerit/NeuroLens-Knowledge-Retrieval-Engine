@@ -1,27 +1,60 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { formatStructuredMessage } from './MathRenderer';
 
 export default function DocPreviewModal({ isOpen, onClose, docName, chunks = [], imageUrl }) {
   const [activeTab, setActiveTab] = useState('text'); // 'text' or 'image'
-
-  if (!isOpen || !docName) return null;
+  const [viewMode, setViewMode] = useState('document'); // 'document' or 'chunks'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [chunkPage, setChunkPage] = useState(1);
+  const CHUNKS_PER_PAGE = 15;
 
   // Filter chunks belonging to this document
-  const docChunks = chunks.filter(c => c.metadata && c.metadata.source === docName);
+  const docChunks = useMemo(() => {
+    return chunks.filter(c => c.metadata && c.metadata.source === docName);
+  }, [chunks, docName]);
   
   // Sort chunks if page numbers are present to ensure logical order
-  const sortedChunks = [...docChunks].sort((a, b) => {
-    const pageA = a.metadata ? a.metadata.page : null;
-    const pageB = b.metadata ? b.metadata.page : null;
-    if (pageA !== null && pageB !== null) {
-      return pageA - pageB;
-    }
-    return 0; // maintain original array index order
-  });
+  const sortedChunks = useMemo(() => {
+    return [...docChunks].sort((a, b) => {
+      const pageA = a.metadata ? a.metadata.page : null;
+      const pageB = b.metadata ? b.metadata.page : null;
+      if (pageA !== null && pageB !== null) {
+        return pageA - pageB;
+      }
+      return 0;
+    });
+  }, [docChunks]);
 
-  const fullText = sortedChunks.map(c => c.content).join('\n\n');
-  const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+  const uniquePages = useMemo(() => {
+    return new Set(sortedChunks.map(c => c.metadata?.page).filter(Boolean));
+  }, [sortedChunks]);
+
+  const fullText = useMemo(() => {
+    return sortedChunks.map(c => c.content).join('\n\n');
+  }, [sortedChunks]);
+
+  const wordCount = useMemo(() => {
+    return fullText.split(/\s+/).filter(Boolean).length;
+  }, [fullText]);
+
   const charCount = fullText.length;
   const chunkCount = sortedChunks.length;
+
+  // Filter chunks by search term
+  const filteredChunks = useMemo(() => {
+    if (!searchTerm.trim()) return sortedChunks;
+    const term = searchTerm.toLowerCase();
+    return sortedChunks.filter(c => c.content.toLowerCase().includes(term));
+  }, [sortedChunks, searchTerm]);
+
+  // Paginate filtered chunks
+  const totalChunkPages = Math.max(1, Math.ceil(filteredChunks.length / CHUNKS_PER_PAGE));
+  const paginatedChunks = useMemo(() => {
+    const start = (chunkPage - 1) * CHUNKS_PER_PAGE;
+    return filteredChunks.slice(start, start + CHUNKS_PER_PAGE);
+  }, [filteredChunks, chunkPage]);
+
+  if (!isOpen || !docName) return null;
 
   // Determine document type
   let docType = 'Text File';
@@ -78,7 +111,9 @@ export default function DocPreviewModal({ isOpen, onClose, docName, chunks = [],
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <h2 style={styles.title} title={docName}>{docName}</h2>
-              <span style={styles.subtitle}>{docType} • {chunkCount} index chunks</span>
+              <span style={styles.subtitle}>
+                {docType} • {uniquePages.size > 0 ? `${uniquePages.size} pages • ` : ''}{chunkCount} chunks
+              </span>
             </div>
           </div>
           <button onClick={onClose} style={styles.closeBtn} title="Close Preview">
@@ -117,11 +152,115 @@ export default function DocPreviewModal({ isOpen, onClose, docName, chunks = [],
           </div>
         )}
 
+        {/* Search and View Mode Toolbar */}
+        {(!isImage || activeTab === 'text') && (
+          <div style={styles.toolbar}>
+            <div style={styles.searchBox}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input 
+                type="text"
+                placeholder="Search within document..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setChunkPage(1);
+                }}
+                style={styles.searchInput}
+              />
+              {searchTerm && (
+                <button 
+                  onClick={() => setSearchTerm('')} 
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div style={styles.modeToggleGroup}>
+              <button
+                onClick={() => setViewMode('document')}
+                style={{
+                  ...styles.modeToggleBtn,
+                  background: viewMode === 'document' ? 'rgba(0, 245, 212, 0.15)' : 'transparent',
+                  color: viewMode === 'document' ? 'var(--color-secondary)' : 'var(--text-muted)'
+                }}
+              >
+                Document
+              </button>
+              <button
+                onClick={() => setViewMode('chunks')}
+                style={{
+                  ...styles.modeToggleBtn,
+                  background: viewMode === 'chunks' ? 'rgba(0, 245, 212, 0.15)' : 'transparent',
+                  color: viewMode === 'chunks' ? 'var(--color-secondary)' : 'var(--text-muted)'
+                }}
+              >
+                Chunks ({filteredChunks.length})
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Modal Content Body */}
         <div style={styles.body}>
           {isImage && imageUrl && activeTab === 'image' ? (
             <div style={styles.imageContainer}>
               <img src={imageUrl} alt={docName} style={styles.image} />
+            </div>
+          ) : viewMode === 'chunks' ? (
+            <div style={styles.chunksViewerContainer}>
+              {paginatedChunks.length === 0 ? (
+                <div style={styles.emptyState}>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                    {searchTerm ? `No chunks match "${searchTerm}".` : 'No chunks available.'}
+                  </p>
+                </div>
+              ) : (
+                paginatedChunks.map((chunk, idx) => {
+                  const globalIdx = (chunkPage - 1) * CHUNKS_PER_PAGE + idx + 1;
+                  return (
+                    <div key={idx} style={styles.chunkCard}>
+                      <div style={styles.chunkHeader}>
+                        <span style={styles.chunkIndexBadge}>Chunk #{globalIdx}</span>
+                        {chunk.metadata?.page && (
+                          <span style={styles.chunkPageBadge}>Page {chunk.metadata.page}</span>
+                        )}
+                        <span style={styles.chunkLengthBadge}>{chunk.content.length} chars</span>
+                      </div>
+                      <div style={{ ...styles.chunkContent, whiteSpace: 'normal' }}>
+                        {formatStructuredMessage(chunk.content)}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {/* Chunk Pagination Controls */}
+              {totalChunkPages > 1 && (
+                <div style={styles.paginationRow}>
+                  <button
+                    onClick={() => setChunkPage(p => Math.max(1, p - 1))}
+                    disabled={chunkPage === 1}
+                    style={{ ...styles.pageBtn, opacity: chunkPage === 1 ? 0.4 : 1 }}
+                  >
+                    ◀ Prev
+                  </button>
+                  <span style={styles.pageIndicator}>
+                    Page {chunkPage} of {totalChunkPages}
+                  </span>
+                  <button
+                    onClick={() => setChunkPage(p => Math.min(totalChunkPages, p + 1))}
+                    disabled={chunkPage === totalChunkPages}
+                    style={{ ...styles.pageBtn, opacity: chunkPage === totalChunkPages ? 0.4 : 1 }}
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div style={styles.textViewerContainer}>
@@ -164,6 +303,12 @@ export default function DocPreviewModal({ isOpen, onClose, docName, chunks = [],
         {/* Metadata Footer */}
         <div style={styles.footer}>
           <div style={styles.metaStats}>
+            {uniquePages.size > 0 && (
+              <div style={styles.statItem}>
+                <span style={styles.statLabel}>Pages</span>
+                <span style={styles.statVal}>{uniquePages.size}</span>
+              </div>
+            )}
             <div style={styles.statItem}>
               <span style={styles.statLabel}>Words</span>
               <span style={styles.statVal}>{wordCount.toLocaleString()}</span>
@@ -204,7 +349,7 @@ const styles = {
   },
   modal: {
     width: '100%',
-    maxWidth: '720px',
+    maxWidth: '780px',
     background: '#0a0d1d',
     border: '1px solid rgba(0, 245, 212, 0.15)',
     display: 'flex',
@@ -277,6 +422,51 @@ const styles = {
     cursor: 'pointer',
     transition: 'all 0.2s'
   },
+  toolbar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 20px',
+    background: 'rgba(255, 255, 255, 0.02)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+    gap: '12px'
+  },
+  searchBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: 'rgba(0, 0, 0, 0.3)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '6px',
+    padding: '6px 10px',
+    flex: 1,
+    maxWidth: '320px'
+  },
+  searchInput: {
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    color: '#ffffff',
+    fontSize: '12px',
+    width: '100%',
+    fontFamily: 'var(--font-sans)'
+  },
+  modeToggleGroup: {
+    display: 'flex',
+    background: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: '6px',
+    padding: '2px',
+    border: '1px solid rgba(255, 255, 255, 0.06)'
+  },
+  modeToggleBtn: {
+    border: 'none',
+    borderRadius: '4px',
+    padding: '5px 12px',
+    fontSize: '11px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
   body: {
     padding: '20px',
     overflowY: 'auto',
@@ -284,7 +474,7 @@ const styles = {
     background: 'rgba(2, 3, 9, 0.2)',
     display: 'flex',
     flexDirection: 'column',
-    minHeight: '260px'
+    minHeight: '280px'
   },
   imageContainer: {
     display: 'flex',
@@ -310,6 +500,74 @@ const styles = {
     flexDirection: 'column',
     gap: '12px',
     flex: 1
+  },
+  chunksViewerContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    flex: 1
+  },
+  chunkCard: {
+    background: 'rgba(255, 255, 255, 0.02)',
+    border: '1px solid rgba(255, 255, 255, 0.06)',
+    borderRadius: '8px',
+    padding: '12px 14px'
+  },
+  chunkHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px'
+  },
+  chunkIndexBadge: {
+    fontSize: '10px',
+    fontWeight: '700',
+    color: 'var(--color-secondary)',
+    background: 'rgba(0, 245, 212, 0.1)',
+    padding: '2px 6px',
+    borderRadius: '4px'
+  },
+  chunkPageBadge: {
+    fontSize: '10px',
+    fontWeight: '600',
+    color: '#38bdf8',
+    background: 'rgba(56, 189, 248, 0.1)',
+    padding: '2px 6px',
+    borderRadius: '4px'
+  },
+  chunkLengthBadge: {
+    fontSize: '10px',
+    color: 'var(--text-muted)',
+    marginLeft: 'auto'
+  },
+  chunkContent: {
+    margin: 0,
+    fontSize: '12px',
+    lineHeight: '150%',
+    color: '#cbd5e1',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word'
+  },
+  paginationRow: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '14px',
+    padding: '12px 0 4px 0'
+  },
+  pageBtn: {
+    background: 'rgba(255, 255, 255, 0.05)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    color: '#e2e8f0',
+    borderRadius: '6px',
+    padding: '6px 12px',
+    fontSize: '11px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  pageIndicator: {
+    fontSize: '12px',
+    color: 'var(--text-muted)'
   },
   webInfoRow: {
     display: 'flex',
@@ -364,7 +622,8 @@ const styles = {
   },
   metaStats: {
     display: 'flex',
-    gap: '20px'
+    gap: '16px',
+    flexWrap: 'wrap'
   },
   statItem: {
     display: 'flex',
