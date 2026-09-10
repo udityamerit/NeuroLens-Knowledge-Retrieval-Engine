@@ -7,7 +7,7 @@ import CameraModal from './components/CameraModal';
 import DocPreviewModal from './components/DocPreviewModal';
 import { safeStorage } from './utils/storage';
 import { indexedStorage } from './utils/indexedStorage';
-import { buildInvertedIndex, searchBM25, isSummaryQuery, getStratifiedSummaryChunks } from './utils/bm25Engine';
+import { buildInvertedIndex, searchBM25, searchBM25MultiDoc, isSummaryQuery, isMultiDocQuery, getStratifiedSummaryChunks, getMultiDocStratifiedSummaryChunks } from './utils/bm25Engine';
 
 // --- Client-Side RAG Helper Functions ---
 
@@ -347,7 +347,7 @@ async function callLLM(provider, apiKey, modelName, messages, temperature) {
 }
 
 // Rewrites user query into self-contained search query using recent chat history context
-async function generateStandaloneQuery(query, history, provider, apiKey, modelName) {
+async function generateStandaloneQuery(query, history, provider, apiKey, modelName, documents = []) {
   if (!history || history.length === 0) return query;
   
   const historyMsgs = history.filter(m => m.role === 'user' || m.role === 'assistant');
@@ -362,9 +362,15 @@ async function generateStandaloneQuery(query, history, provider, apiKey, modelNa
     historyStr += `${role}: ${content}\n`;
   });
 
+  const docsListStr = documents && documents.length > 0 ? documents.join(", ") : "";
+  const docGuidance = docsListStr 
+    ? `Available uploaded files in knowledge base: [${docsListStr}]. If the user refers to "the other pdf", "the first file", or a specific document topic, incorporate the matching filename.\n`
+    : "";
+
   const rephrasePrompt = 
     "Given the following chat history and a follow-up question, " +
     "rephrase the follow-up question to be a self-contained standalone search query. " +
+    docGuidance +
     "Do NOT answer the question. Just rephrase it to include necessary details " +
     "from the history so that it can be searched in a vector database.\n" +
     "Return ONLY the raw standalone question string and absolutely nothing else.\n\n" +
@@ -382,11 +388,37 @@ async function generateStandaloneQuery(query, history, provider, apiKey, modelNa
   }
 }
 
+// Build structured Master Knowledge Library Catalog for full multi-document awareness
+function buildLibraryCatalog(documents, allChunks) {
+  if (!documents || documents.length === 0) return "";
+  let catalog = "=== ACTIVE KNOWLEDGE BASE CATALOG (Total Sources: " + documents.length + ") ===\n";
+  documents.forEach((doc, idx) => {
+    const docChunks = allChunks.filter(c => c.metadata && c.metadata.source === doc);
+    const uniquePages = new Set(docChunks.map(c => c.metadata?.page).filter(Boolean));
+    const pageStr = uniquePages.size > 0 ? `${uniquePages.size} pages, ` : '';
+    
+    // Extract first 160 characters of first chunk as opening synopsis
+    let preview = "";
+    if (docChunks.length > 0 && docChunks[0].content) {
+      preview = docChunks[0].content.replace(/\s+/g, ' ').trim().substring(0, 160);
+      if (docChunks[0].content.length > 160) preview += "...";
+    }
+
+    catalog += `${idx + 1}. 📄 "${doc}" (${pageStr}${docChunks.length} chunks)\n`;
+    if (preview) {
+      catalog += `   Overview: "${preview}"\n`;
+    }
+  });
+  catalog += "=================================================================\n\n";
+  return catalog;
+}
+
 // --- Main App Component ---
 
 export default function App() {
   const [documents, setDocuments] = useState([]);
   const [allChunks, setAllChunks] = useState([]);
+  const [activeFilter, setActiveFilter] = useState('ALL'); // 'ALL' or specific filename
   const [messages, setMessages] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -597,12 +629,15 @@ export default function App() {
         newDocs.push(filename);
       }
 
+      const newDocNames = new Set(newDocs);
       const updatedDocs = [...documents];
       newDocs.forEach(d => {
         if (!updatedDocs.includes(d)) updatedDocs.push(d);
       });
 
-      const updatedChunks = [...allChunks, ...newChunks];
+      // Filter out any previous chunks for files being re-uploaded to prevent duplicate index pollution
+      const preservedChunks = allChunks.filter(c => !newDocNames.has(c.metadata?.source));
+      const updatedChunks = [...preservedChunks, ...newChunks];
 
       setDocuments(updatedDocs);
       setAllChunks(updatedChunks);
@@ -860,60 +895,95 @@ export default function App() {
         "- For inline variables, numbers with units, or short math symbols, wrap them in single dollar signs: $ <symbol> $\n" +
         "- Use standard LaTeX environments such as \\begin{cases} ... \\end{cases}, \\frac{a}{b}, \\partial, \\sum, \\int, \\matrix, etc. Never output pseudo-math or plain text approximations when LaTeX is appropriate.";
 
+      // Build structured catalog describing every document in the library
+      const libraryCatalog = buildLibraryCatalog(documents, allChunks);
+
+      const multiDocInstruction = 
+        "\n\nMULTI-DOCUMENT KNOWLEDGE & AWARENESS RULES:\n" +
+        "1. You have direct access to all documents listed in the ACTIVE KNOWLEDGE BASE CATALOG above.\n" +
+        "2. When the user asks what documents are uploaded, asks for an overview of the library, or asks questions across files, you must acknowledge, refer to, and describe all relevant documents from the catalog and context.\n" +
+        "3. When answering, explicitly cite the exact document name and page number for every statement (e.g. [filename.pdf (Page X)]).\n" +
+        "4. If the user asks a comparative question between documents, synthesize facts from each document objectively.\n" +
+        "5. Never state that you only have access to one document if multiple documents are listed in the catalog.\n";
+
       if (allChunks.length > 0) {
-        // 1. Generate standalone query using chat history context
+        // 1. Generate standalone query using chat history context & document list
         const searchQuery = await generateStandaloneQuery(
           queryText,
           messages,
           settings.provider,
           resolvedKey,
-          settings.modelName
+          settings.modelName,
+          documents
         );
 
-        // 2. High-speed BM25 / Stratified multi-page retrieval
-        if (isSummaryQuery(queryText) || isSummaryQuery(searchQuery)) {
-          relevantChunks = getStratifiedSummaryChunks(searchQuery, allChunks, invertedIndexRef.current, Math.max(settings.k, 8));
+        // 2. Compute dynamic context quota based on number of uploaded documents
+        const baseK = settings.k || 5;
+        const effectiveK = documents.length > 1 
+          ? Math.min(Math.max(baseK, documents.length * 3), 15) 
+          : baseK;
+
+        const isSummary = isSummaryQuery(queryText) || isSummaryQuery(searchQuery);
+        const isMultiDoc = isMultiDocQuery(queryText, documents) || isMultiDocQuery(searchQuery, documents);
+
+        // 3. Multi-Document Balanced / Stratified Retrieval
+        if ((isMultiDoc || isSummary) && documents.length > 1 && (!activeFilter || activeFilter === 'ALL')) {
+          // Multi-document stratified sampling guarantees every uploaded PDF has representation!
+          relevantChunks = getMultiDocStratifiedSummaryChunks(allChunks, documents, 3, effectiveK);
+        } else if (isSummary) {
+          // Single document or focused stratified summary
+          const targetChunks = (activeFilter && activeFilter !== 'ALL')
+            ? allChunks.filter(c => c.metadata?.source === activeFilter)
+            : allChunks;
+          relevantChunks = getStratifiedSummaryChunks(searchQuery, targetChunks, invertedIndexRef.current, effectiveK);
         } else {
-          relevantChunks = searchBM25(searchQuery, allChunks, invertedIndexRef.current, settings.k);
+          // Multi-document balanced BM25 retrieval with fair sharing across all documents
+          relevantChunks = searchBM25MultiDoc(searchQuery, allChunks, invertedIndexRef.current, effectiveK, activeFilter);
         }
 
-        // 3. Format system prompt context
+        // 4. Format system prompt context
         let contextStr = "";
         relevantChunks.forEach((chunk, i) => {
           const source = chunk.metadata.source || "Unknown";
           const pageInfo = chunk.metadata.page ? ` (Page ${chunk.metadata.page})` : "";
-          contextStr += `--- Source ${i + 1}: ${source}${pageInfo} ---\n${chunk.content}\n\n`;
+          contextStr += `--- Context Passage ${i + 1} [From: ${source}${pageInfo}] ---\n${chunk.content}\n\n`;
         });
 
         if (isAskingAboutAuthorStudy || isAskingAboutCreator) {
           systemPrompt = 
-            "You are NeuroLens, an advanced AI document intelligence engine. " +
+            "You are NeuroLens, an advanced AI document intelligence engine.\n\n" +
+            libraryCatalog +
             "In addition to answering from the documents, when asked about your creator, developer, programmer, builder, or asked to study your author/projects, you must respond with his real resume profile:\n\n" +
             `${developerBio}` +
             "Explain that you are analyzing the documents loaded into your library, but first proudly introduce Uditya Narayan Tiwari as your creator.\n\n" +
             `Here is the context from the documents:\n\n${contextStr}` +
+            multiDocInstruction +
             mathInstruction;
         } else {
           systemPrompt = 
-            "You are NeuroLens, an advanced AI document analyst. " +
-            "Your task is to answer the user's question based strictly on the provided context source blocks. " +
-            "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). " +
-            "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. " +
-            "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n" +
+            "You are NeuroLens, an advanced AI document intelligence and cross-document analysis engine.\n\n" +
+            libraryCatalog +
+            "Your task is to answer the user's question with high accuracy and synthesis based on the knowledge library catalog and retrieved context passages.\n" +
+            "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi).\n" +
+            "For each statement you make, cite which document you retrieved the information from (e.g. [paper.pdf, Page 2]).\n" +
+            "If the context does not contain the information needed to answer the question, state that the specific details are not found in the provided documents while acknowledging what documents exist in your library.\n\n" +
             `Here is the context retrieved from the documents:\n\n${contextStr}` +
+            multiDocInstruction +
             mathInstruction;
         }
       } else {
         if (isAskingAboutAuthorStudy || isAskingAboutCreator) {
           systemPrompt = 
-            "You are NeuroLens, an advanced AI document intelligence engine. " +
+            "You are NeuroLens, an advanced AI document intelligence engine.\n\n" +
+            (libraryCatalog ? libraryCatalog + "\n" : "") +
             "When asked about your creator, developer, programmer, or builder, or asked to study your author/projects, you must answer with his real resume profile:\n\n" +
             `${developerBio}` +
             "Present this information with extreme professionalism and pride in Uditya's engineering." +
             mathInstruction;
         } else {
           systemPrompt = 
-            "You are NeuroLens, an advanced AI assistant. " +
+            "You are NeuroLens, an advanced AI assistant.\n\n" +
+            (libraryCatalog ? libraryCatalog + "\n" : "") +
             "Respond to the user's question helpfully and clearly. " +
             "Respond in the same language as the user's question." +
             mathInstruction;
@@ -977,6 +1047,7 @@ export default function App() {
     setDocuments([]);
     setAllChunks([]);
     setMessages([]);
+    setActiveFilter('ALL');
     await indexedStorage.clear();
   };
 
@@ -989,6 +1060,9 @@ export default function App() {
 
     setDocuments(updatedDocs);
     setAllChunks(updatedChunks);
+    if (activeFilter === docName) {
+      setActiveFilter('ALL');
+    }
 
     await indexedStorage.setItem('neurolens_docs', updatedDocs);
     await indexedStorage.setItem('neurolens_chunks', updatedChunks);
@@ -1048,6 +1122,8 @@ export default function App() {
           isFetchingUrl={isFetchingUrl}
           uploadProgress={uploadProgress}
           allChunks={allChunks}
+          activeFilter={activeFilter}
+          onSelectFilter={(doc) => setActiveFilter(doc)}
         />
       </div>
 
@@ -1058,6 +1134,10 @@ export default function App() {
         isGenerating={isGenerating}
         activeModel={`${settings.provider.toUpperCase()} (${settings.modelName})`}
         hasDocuments={documents.length > 0}
+        documents={documents}
+        allChunks={allChunks}
+        activeFilter={activeFilter}
+        onSelectFilter={(filter) => setActiveFilter(filter)}
         isMobile={isMobile}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         backendUrl={settings.backendUrl}

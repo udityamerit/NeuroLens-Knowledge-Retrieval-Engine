@@ -325,19 +325,46 @@ class RAGEngine:
         return True
 
     def get_relevant_chunks(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """Retrieves top k matching text chunks from the vector store."""
+        """Retrieves top k matching text chunks from the vector store with multi-document balance."""
         if self.vector_store is None:
             return []
 
-        results = self.vector_store.similarity_search_with_score(query, k=k)
-        chunks = []
+        # Request more candidates if multiple files are indexed to ensure fair representation
+        num_docs = len(self.uploaded_files)
+        fetch_k = max(k * 2, num_docs * 3) if num_docs > 1 else k
+        results = self.vector_store.similarity_search_with_score(query, k=fetch_k)
+        
+        if num_docs <= 1:
+            chunks = []
+            for doc, score in results[:k]:
+                chunks.append({
+                    "content": doc.page_content,
+                    "metadata": doc.metadata,
+                    "relevance_score": float(score)
+                })
+            return chunks
+
+        # Group by source for fair-share distribution across all uploaded files
+        grouped = {}
         for doc, score in results:
-            chunks.append({
+            src = doc.metadata.get("source", "Unknown")
+            if src not in grouped:
+                grouped[src] = []
+            grouped[src].append({
                 "content": doc.page_content,
                 "metadata": doc.metadata,
                 "relevance_score": float(score)
             })
-        return chunks
+
+        balanced = []
+        sources = list(grouped.keys())
+        max_depth = max(len(l) for l in grouped.values()) if grouped else 0
+        for depth in range(max_depth):
+            for src in sources:
+                if depth < len(grouped[src]) and len(balanced) < k:
+                    balanced.append(grouped[src][depth])
+
+        return balanced[:k]
 
     def clear(self):
         """Clears the current vector store index and document registry."""
@@ -490,20 +517,41 @@ class RAGEngine:
             "- Use standard LaTeX environments such as \\begin{cases} ... \\end{cases}, \\frac{a}{b}, \\partial, \\sum, \\int, \\matrix, etc. Never output pseudo-math or plain text approximations when LaTeX is appropriate."
         )
 
+        catalog_lines = []
+        if self.uploaded_files:
+            catalog_lines.append(f"=== ACTIVE KNOWLEDGE BASE CATALOG ({len(self.uploaded_files)} Ingested Sources) ===")
+            for idx, fname in enumerate(self.uploaded_files):
+                catalog_lines.append(f"{idx+1}. 📄 {fname}")
+            catalog_lines.append("===============================================================\n")
+        library_catalog = "\n".join(catalog_lines)
+
+        multi_doc_instructions = (
+            "\n\nMULTI-DOCUMENT KNOWLEDGE & AWARENESS RULES:\n"
+            "1. You have direct access to all documents listed in the ACTIVE KNOWLEDGE BASE CATALOG above.\n"
+            "2. When the user asks what documents are uploaded, asks for an overview of the library, or asks questions across files, you must acknowledge, refer to, and describe all relevant documents from the catalog and context.\n"
+            "3. When answering, explicitly cite the exact document name and page number for every statement (e.g. [filename.pdf (Page X)]).\n"
+            "4. If the user asks a comparative question between documents, synthesize facts from each document objectively.\n"
+            "5. Never state that you only have access to one document if multiple documents are listed in the catalog.\n"
+        )
+
         if not relevant_chunks:
             if is_asking_about_author_study or is_asking_about_creator:
                 system_prompt = (
-                    "You are NeuroLens, an advanced AI document intelligence engine. "
+                    "You are NeuroLens, an advanced AI document intelligence engine.\n\n"
+                    f"{library_catalog}"
                     "When asked about your creator, developer, programmer, or builder, or asked to study your author/projects, you must answer with his real resume profile:\n\n"
                     f"{developer_bio}"
                     "Respond with extreme professionalism and pride in Uditya's engineering work."
+                    f"{multi_doc_instructions}"
                     f"{math_instructions}"
                 )
             else:
                 system_prompt = (
-                    "You are NeuroLens, an advanced AI assistant. "
+                    "You are NeuroLens, an advanced AI assistant.\n\n"
+                    f"{library_catalog}"
                     "Respond to the user's question helpfully and clearly. "
                     "Respond in the same language as the user's question."
+                    f"{multi_doc_instructions}"
                     f"{math_instructions}"
                 )
         else:
@@ -512,25 +560,29 @@ class RAGEngine:
             for i, chunk in enumerate(relevant_chunks):
                 source = chunk["metadata"].get("source", "Unknown")
                 page_info = f" (Page {chunk['metadata'].get('page')})" if "page" in chunk["metadata"] else ""
-                context_str += f"--- Source {i+1}: {source}{page_info} ---\n{chunk['content']}\n\n"
+                context_str += f"--- Context Passage {i+1} [From: {source}{page_info}] ---\n{chunk['content']}\n\n"
 
             if is_asking_about_author_study or is_asking_about_creator:
                 system_prompt = (
-                    "You are NeuroLens, an advanced AI document intelligence engine. "
+                    "You are NeuroLens, an advanced AI document intelligence engine.\n\n"
+                    f"{library_catalog}"
                     "In addition to answering from the documents, when asked about your creator, developer, programmer, builder, or asked to study your author/projects, you must respond with his real resume profile:\n\n"
                     f"{developer_bio}"
                     "Explain that you are analyzing the documents loaded into your library, but first proudly introduce Uditya Narayan Tiwari as your creator.\n\n"
                     f"Here is the context from the documents:\n\n{context_str}"
+                    f"{multi_doc_instructions}"
                     f"{math_instructions}"
                 )
             else:
                 system_prompt = (
-                    "You are NeuroLens, an advanced AI document analyst. "
-                    "Your task is to answer the user's question based strictly on the provided context source blocks. "
-                    "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi). "
-                    "For each statement you make, try to cite which Source (e.g., [Source 1], [Source 2]) you retrieved the information from. "
-                    "If the context does not contain the information needed to answer the question, state that you cannot find the answer in the provided documents.\n\n"
+                    "You are NeuroLens, an advanced AI document intelligence and cross-document analysis engine.\n\n"
+                    f"{library_catalog}"
+                    "Your task is to answer the user's question with high accuracy and cross-document synthesis based on the knowledge library catalog and retrieved context passages.\n"
+                    "Respond in the same language as the user's question (e.g., if the user asks in Hindi, translate the relevant context facts and answer in Hindi).\n"
+                    "For each statement you make, cite which document you retrieved the information from (e.g. [filename.pdf, Page 2]).\n"
+                    "If the context does not contain the information needed to answer the question, state that the specific details are not found in the provided documents while acknowledging what documents exist in your library.\n\n"
                     f"Here is the context retrieved from the documents:\n\n{context_str}"
+                    f"{multi_doc_instructions}"
                     f"{math_instructions}"
                 )
 

@@ -1,7 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { formatStructuredMessage } from './MathRenderer';
 
-export default function ChatPanel({ messages, onSendQuery, isGenerating, activeModel, hasDocuments, isMobile, onToggleSidebar, backendUrl, elevenLabsApiKey }) {
+export default function ChatPanel({ 
+  messages, 
+  onSendQuery, 
+  isGenerating, 
+  activeModel, 
+  hasDocuments, 
+  documents = [],
+  allChunks = [],
+  activeFilter = 'ALL',
+  onSelectFilter = () => {},
+  isMobile, 
+  onToggleSidebar, 
+  backendUrl, 
+  elevenLabsApiKey 
+}) {
   const [query, setQuery] = useState('');
   const [expandedSources, setExpandedSources] = useState({});
   const chatEndRef = useRef(null);
@@ -656,6 +670,39 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
             <div style={styles.pulseDot} />
             <span style={{ fontSize: '13px', fontWeight: '600', color: '#e2e8f0' }}>NeuroLens Session</span>
           </div>
+
+          {documents.length > 0 && (
+            <div 
+              onClick={() => {
+                if (documents.length > 1 && activeFilter !== 'ALL') {
+                  onSelectFilter('ALL');
+                }
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                background: activeFilter === 'ALL' ? 'rgba(0, 245, 212, 0.08)' : 'rgba(157, 78, 221, 0.12)',
+                border: activeFilter === 'ALL' ? '1px solid rgba(0, 245, 212, 0.3)' : '1px solid rgba(157, 78, 221, 0.4)',
+                borderRadius: '16px',
+                padding: '2px 9px',
+                fontSize: isMobile ? '10px' : '11px',
+                color: activeFilter === 'ALL' ? '#00f5d4' : '#c084fc',
+                cursor: documents.length > 1 && activeFilter !== 'ALL' ? 'pointer' : 'default',
+                transition: 'all 0.2s',
+                marginLeft: '6px'
+              }}
+              title={activeFilter !== 'ALL' ? "Click to switch back to searching all documents" : `Currently querying across all ${documents.length} sources`}
+            >
+              <span>{activeFilter === 'ALL' ? '📚' : '🎯'}</span>
+              <span style={{ fontWeight: '600', maxWidth: isMobile ? '100px' : '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {activeFilter === 'ALL' ? `All Sources (${documents.length})` : activeFilter}
+              </span>
+              {activeFilter !== 'ALL' && (
+                <span style={{ fontSize: '9px', opacity: 0.7, textDecoration: 'underline', marginLeft: '3px' }}>✕</span>
+              )}
+            </div>
+          )}
         </div>
         
         <div style={{
@@ -769,21 +816,91 @@ export default function ChatPanel({ messages, onSendQuery, isGenerating, activeM
               </div>
             )}
 
-            {hasDocuments && (
-              <div style={styles.suggestions}>
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', marginBottom: '10px' }}>
-                  Quick Queries
+            {hasDocuments && documents.length > 0 && (
+              <div style={{
+                marginTop: '16px',
+                width: '100%',
+                maxWidth: '600px',
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(0, 245, 212, 0.25)',
+                borderRadius: '12px',
+                padding: '16px',
+                textAlign: 'left',
+                boxShadow: '0 0 24px rgba(0, 245, 212, 0.06)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '16px' }}>📚</span>
+                    <span style={{ fontWeight: '600', fontSize: '13px', color: '#00f5d4' }}>
+                      Knowledge Base ({documents.length} source{documents.length > 1 ? 's' : ''} active)
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {allChunks.length} chunks indexed
+                  </span>
+                </div>
+
+                {/* Sources chips */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
+                  {documents.map((doc, idx) => {
+                    const docChunks = allChunks.filter(c => c.metadata && c.metadata.source === doc);
+                    const pages = new Set(docChunks.map(c => c.metadata?.page).filter(Boolean));
+                    const pageStr = pages.size > 0 ? `${pages.size}p • ` : '';
+                    const isSel = activeFilter === doc;
+
+                    return (
+                      <div 
+                        key={idx}
+                        onClick={() => onSelectFilter(isSel ? 'ALL' : doc)}
+                        style={{
+                          background: isSel ? 'rgba(0, 245, 212, 0.16)' : 'rgba(255, 255, 255, 0.04)',
+                          border: isSel ? '1px solid #00f5d4' : '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: '6px',
+                          padding: '4px 9px',
+                          fontSize: '11px',
+                          color: isSel ? '#00f5d4' : '#e2e8f0',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s'
+                        }}
+                        title={isSel ? "Focused on this document. Click to query all" : "Click to focus on this document"}
+                      >
+                        <span>📄</span>
+                        <span style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({pageStr}{docChunks.length}c)</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '8px' }}>
+                  {documents.length > 1 ? 'Multi-Document Quick Synthesis' : 'Quick Queries'}
                 </p>
                 <div style={styles.suggestionGrid}>
-                  <button onClick={() => handleSuggestionClick("Summarize the uploaded documents")} style={styles.suggestionBtn}>
-                    Summarize the documents
-                  </button>
-                  <button onClick={() => handleSuggestionClick("What are the key points in these files?")} style={styles.suggestionBtn}>
-                    List key findings
-                  </button>
-                  <button onClick={() => handleSuggestionClick("Are there any action items mentioned?")} style={styles.suggestionBtn}>
-                    Extract action items
-                  </button>
+                  {documents.length > 1 ? (
+                    <>
+                      <button onClick={() => handleSuggestionClick("Summarize all uploaded documents and provide an executive overview of each.")} style={styles.suggestionBtn}>
+                        📑 Summarize all uploaded files
+                      </button>
+                      <button onClick={() => handleSuggestionClick("Compare the key topics and main differences between the uploaded documents.")} style={styles.suggestionBtn}>
+                        ⚖️ Compare differences across files
+                      </button>
+                      <button onClick={() => handleSuggestionClick("What documents have I uploaded and what topics are in each file?")} style={styles.suggestionBtn}>
+                        📋 What documents did I upload?
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => handleSuggestionClick("Summarize this document and give me the key points.")} style={styles.suggestionBtn}>
+                        📑 Summarize this document
+                      </button>
+                      <button onClick={() => handleSuggestionClick("What are the key takeaways and conclusions from this document?")} style={styles.suggestionBtn}>
+                        🎯 Key takeaways & conclusions
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}

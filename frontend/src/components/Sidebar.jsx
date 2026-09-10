@@ -12,7 +12,9 @@ export default function Sidebar({
   isUploading, 
   isFetchingUrl,
   uploadProgress,
-  allChunks = []
+  allChunks = [],
+  activeFilter = 'ALL',
+  onSelectFilter = () => {}
 }) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -262,6 +264,37 @@ export default function Sidebar({
           <span style={styles.badge}>{documents.length} files</span>
         </div>
 
+        {/* Multi-Document Scope Selector */}
+        {documents.length > 1 && (
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+            <button
+              type="button"
+              onClick={() => onSelectFilter('ALL')}
+              style={{
+                flex: 1,
+                background: activeFilter === 'ALL' ? 'rgba(0, 245, 212, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                border: activeFilter === 'ALL' ? '1px solid var(--color-secondary)' : '1px solid rgba(255, 255, 255, 0.08)',
+                color: activeFilter === 'ALL' ? '#00f5d4' : 'var(--text-muted)',
+                padding: '5px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+                transition: 'all 0.2s',
+                boxShadow: activeFilter === 'ALL' ? '0 0 8px rgba(0, 245, 212, 0.2)' : 'none'
+              }}
+              title="Query across all uploaded documents simultaneously"
+            >
+              <span>📚 All Sources</span>
+              <span style={{ fontSize: '10px', opacity: 0.8 }}>({documents.length})</span>
+            </button>
+          </div>
+        )}
+
         <div style={styles.docList}>
           {documents.length === 0 ? (
             <div style={styles.emptyState}>
@@ -277,6 +310,7 @@ export default function Sidebar({
               const uniquePages = new Set(docChunks.map(c => c.metadata?.page).filter(Boolean));
               const pageText = uniquePages.size > 0 ? `${uniquePages.size} pages • ` : '';
               const statsLabel = docChunks.length > 0 ? `${pageText}${docChunks.length} chunks` : (doc.startsWith('🌐') ? 'URL Indexed' : 'Indexed');
+              const isFocused = activeFilter === doc;
 
               return (
                 <div 
@@ -285,6 +319,9 @@ export default function Sidebar({
                   className="animate-fade-in doc-card-item"
                   style={{
                     ...styles.docCard,
+                    borderColor: isFocused ? '#00f5d4' : 'rgba(255, 255, 255, 0.08)',
+                    background: isFocused ? 'rgba(0, 245, 212, 0.06)' : styles.docCard.background,
+                    boxShadow: isFocused ? '0 0 10px rgba(0, 245, 212, 0.15)' : 'none',
                     animationDelay: `${idx * 0.05}s`,
                     cursor: 'pointer'
                   }}
@@ -293,7 +330,22 @@ export default function Sidebar({
                     {getFileIcon(doc)}
                   </div>
                   <div style={styles.docInfo}>
-                    <p style={styles.docName} title={doc}>{doc}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <p style={styles.docName} title={doc}>{doc}</p>
+                      {isFocused && (
+                        <span style={{
+                          fontSize: '9px',
+                          color: '#00f5d4',
+                          background: 'rgba(0, 245, 212, 0.15)',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          fontWeight: 'bold',
+                          flexShrink: 0
+                        }}>
+                          FOCUSED
+                        </span>
+                      )}
+                    </div>
                     <div style={styles.docStatusRow}>
                       <span style={{
                         ...styles.statusDot,
@@ -303,21 +355,46 @@ export default function Sidebar({
                       <span style={styles.statusText}>{statsLabel}</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteDocument(doc);
-                    }}
-                    className="doc-delete-btn"
-                    style={styles.deleteDocBtn}
-                    title="Remove this source"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {documents.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectFilter(isFocused ? 'ALL' : doc);
+                        }}
+                        style={{
+                          background: isFocused ? 'rgba(0, 245, 212, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                          border: isFocused ? '1px solid #00f5d4' : '1px solid rgba(255, 255, 255, 0.12)',
+                          color: isFocused ? '#00f5d4' : 'var(--text-muted)',
+                          borderRadius: '4px',
+                          padding: '3px 6px',
+                          fontSize: '10px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s'
+                        }}
+                        title={isFocused ? "Focused on this file. Click to query all files" : "Focus chat queries on this document"}
+                      >
+                        {isFocused ? 'All' : 'Focus'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteDocument(doc);
+                      }}
+                      className="doc-delete-btn"
+                      style={styles.deleteDocBtn}
+                      title="Remove this source"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               );
             })
