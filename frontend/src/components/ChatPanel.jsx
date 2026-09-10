@@ -362,7 +362,10 @@ export default function ChatPanel({
 
       let cleanText = text
         .replace(/📥 \*\*System:\*\*/g, '')
+        .replace(/🗑️ \*\*System:\*\*/g, '')
+        .replace(/🌐 \*\*System:\*\*/g, '')
         .replace(/❌ \*\*Error running query:\*\*/g, '')
+        .replace(/⚠️/g, '')
         .replace(/\[Source \d+\]/g, '')
         .replace(/\$\$[\s\S]*?\$\$/g, ' mathematical formula ')
         .replace(/\\\[[\s\S]*?\\\]/g, ' mathematical formula ')
@@ -928,7 +931,7 @@ export default function ChatPanel({
                 </div>
 
                 {/* Assistant Control Actions (Speak & Sources) */}
-                {msg.role === 'assistant' && (
+                {msg.role === 'assistant' && !msg.isSystem && !msg.content?.includes('**System:**') && !msg.content?.startsWith('❌') && (
                   <div style={styles.assistantActionsRow}>
                     {msg.sources && msg.sources.length > 0 && (
                       <button 

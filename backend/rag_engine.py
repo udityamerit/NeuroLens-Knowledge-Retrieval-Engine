@@ -378,6 +378,27 @@ class RAGEngine:
             except Exception:
                 pass
 
+def is_system_notification(msg: Dict[str, Any]) -> bool:
+    """Detects internal system notifications so they do not pollute LLM conversation history."""
+    if not msg:
+        return True
+    if msg.get("isSystem"):
+        return True
+    role = msg.get("role")
+    if role not in ["user", "assistant"]:
+        return True
+    content = str(msg.get("content") or "").strip()
+    if not content:
+        return True
+    if "**System:**" in content or "**Error" in content:
+        return True
+    if any(content.startswith(emoji) for emoji in ["📥", "🗑️", "🌐", "❌", "⚠️"]):
+        return True
+    if content.lower().startswith("removed ") and "library" in content.lower():
+        return True
+    return False
+
+
     def generate_standalone_query(
         self,
         query: str,
@@ -390,7 +411,7 @@ class RAGEngine:
         if not history:
             return query
             
-        history_msgs = [m for m in history if m.get("role") in ["user", "assistant"] and m.get("content")]
+        history_msgs = [m for m in history if not is_system_notification(m)]
         if not history_msgs:
             return query
 
@@ -527,11 +548,14 @@ class RAGEngine:
 
         multi_doc_instructions = (
             "\n\nMULTI-DOCUMENT KNOWLEDGE & AWARENESS RULES:\n"
-            "1. You have direct access to all documents listed in the ACTIVE KNOWLEDGE BASE CATALOG above.\n"
-            "2. When the user asks what documents are uploaded, asks for an overview of the library, or asks questions across files, you must acknowledge, refer to, and describe all relevant documents from the catalog and context.\n"
-            "3. When answering, explicitly cite the exact document name and page number for every statement (e.g. [filename.pdf (Page X)]).\n"
-            "4. If the user asks a comparative question between documents, synthesize facts from each document objectively.\n"
-            "5. Never state that you only have access to one document if multiple documents are listed in the catalog.\n"
+            "1. CRITICAL GROUND TRUTH OVERRIDE: The ACTIVE KNOWLEDGE BASE CATALOG above represents the LIVE, REAL-TIME state of the library right now.\n"
+            "2. If a document (such as cap1.pdf or any other file) is listed in the ACTIVE KNOWLEDGE BASE CATALOG, it is 100% active, available, and present in the library.\n"
+            "3. Even if previous messages in the conversation discussed deleting, removing, or modifying a document, if that document appears in the ACTIVE KNOWLEDGE BASE CATALOG, it is currently PRESENT. You MUST acknowledge it as currently present. NEVER claim a document is deleted, missing, or removed if it appears in the catalog.\n"
+            "4. You have direct access to all documents listed in the ACTIVE KNOWLEDGE BASE CATALOG above.\n"
+            "5. When the user asks what documents are uploaded, asks how many files exist, asks for an overview of the library, or asks questions across files, you must list and describe all currently active documents from the catalog.\n"
+            "6. When answering, explicitly cite the exact document name and page number for every statement (e.g. [filename.pdf (Page X)]).\n"
+            "7. If the user asks a comparative question between documents, synthesize facts from each document objectively.\n"
+            "8. Never state that you only have access to fewer documents than those listed in the catalog.\n"
         )
 
         if not relevant_chunks:
@@ -606,10 +630,8 @@ class RAGEngine:
                 messages = [{"role": "system", "content": system_prompt}]
                 if history:
                     for msg in history:
-                        role = msg.get("role")
-                        content = msg.get("content")
-                        if role in ["user", "assistant"] and content and not content.startswith("📥 **System:**") and not content.startswith("❌ **Error"):
-                            messages.append({"role": role, "content": content})
+                        if not is_system_notification(msg):
+                            messages.append({"role": msg.get("role"), "content": msg.get("content")})
                 messages.append({"role": "user", "content": query})
                 
                 response = llm.invoke(messages)
@@ -629,10 +651,8 @@ class RAGEngine:
                 messages = [{"role": "system", "content": system_prompt}]
                 if history:
                     for msg in history:
-                        role = msg.get("role")
-                        content = msg.get("content")
-                        if role in ["user", "assistant"] and content and not content.startswith("📥 **System:**") and not content.startswith("❌ **Error"):
-                            messages.append({"role": role, "content": content})
+                        if not is_system_notification(msg):
+                            messages.append({"role": msg.get("role"), "content": msg.get("content")})
                 messages.append({"role": "user", "content": query})
                 
                 response = llm.invoke(messages)
@@ -653,11 +673,9 @@ class RAGEngine:
                 full_prompt = f"System: {system_prompt}\n"
                 if history:
                     for msg in history:
-                        role = msg.get("role")
-                        content = msg.get("content")
-                        if role in ["user", "assistant"] and content and not content.startswith("📥 **System:**") and not content.startswith("❌ **Error"):
-                            speaker = "User" if role == "user" else "Assistant"
-                            full_prompt += f"{speaker}: {content}\n"
+                        if not is_system_notification(msg):
+                            speaker = "User" if msg.get("role") == "user" else "Assistant"
+                            full_prompt += f"{speaker}: {msg.get('content')}\n"
                 full_prompt += f"User: {query}\nAssistant:"
                 
                 answer = llm.invoke(full_prompt)

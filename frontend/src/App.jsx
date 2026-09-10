@@ -346,11 +346,25 @@ async function callLLM(provider, apiKey, modelName, messages, temperature) {
   }
 }
 
+// Helper to detect internal system notices (upload, removal, url ingestion, errors)
+// System messages must NEVER pollute LLM conversation history
+function isSystemMessage(msg) {
+  if (!msg) return true;
+  if (msg.isSystem) return true;
+  if (msg.role !== 'user' && msg.role !== 'assistant') return true;
+  const content = typeof msg.content === 'string' ? msg.content.trim() : '';
+  if (!content) return true;
+  if (content.includes('**System:**') || content.includes('**Error')) return true;
+  if (/^(📥|🗑️|🌐|❌|⚠️)/.test(content)) return true;
+  if (/^Removed\s+.*from the library/i.test(content)) return true;
+  return false;
+}
+
 // Rewrites user query into self-contained search query using recent chat history context
 async function generateStandaloneQuery(query, history, provider, apiKey, modelName, documents = []) {
   if (!history || history.length === 0) return query;
   
-  const historyMsgs = history.filter(m => m.role === 'user' || m.role === 'assistant');
+  const historyMsgs = history.filter(m => !isSystemMessage(m));
   if (historyMsgs.length === 0) return query;
 
   const recentHistory = historyMsgs.slice(-4);
@@ -651,7 +665,8 @@ export default function App() {
         {
           role: 'assistant',
           content: `📥 **System:** Successfully processed and indexed **${files.length}** new document(s) directly in your browser (${newChunks.length} chunks generated). You can now ask questions based on these files.`,
-          sources: []
+          sources: [],
+          isSystem: true
         }
       ]);
     } catch (error) {
@@ -827,7 +842,8 @@ export default function App() {
         {
           role: 'assistant',
           content: `🌐 **System:** Successfully fetched and indexed content from **${displayName}**. Extracted **${newChunks.length}** text chunks. You can now ask questions about this page.`,
-          sources: []
+          sources: [],
+          isSystem: true
         }
       ]);
     } catch (error) {
@@ -900,11 +916,14 @@ export default function App() {
 
       const multiDocInstruction = 
         "\n\nMULTI-DOCUMENT KNOWLEDGE & AWARENESS RULES:\n" +
-        "1. You have direct access to all documents listed in the ACTIVE KNOWLEDGE BASE CATALOG above.\n" +
-        "2. When the user asks what documents are uploaded, asks for an overview of the library, or asks questions across files, you must acknowledge, refer to, and describe all relevant documents from the catalog and context.\n" +
-        "3. When answering, explicitly cite the exact document name and page number for every statement (e.g. [filename.pdf (Page X)]).\n" +
-        "4. If the user asks a comparative question between documents, synthesize facts from each document objectively.\n" +
-        "5. Never state that you only have access to one document if multiple documents are listed in the catalog.\n";
+        "1. CRITICAL GROUND TRUTH OVERRIDE: The ACTIVE KNOWLEDGE BASE CATALOG above represents the LIVE, REAL-TIME state of the library right now.\n" +
+        "2. If a document (such as cap1.pdf or any other file) is listed in the ACTIVE KNOWLEDGE BASE CATALOG, it is 100% active, available, and present in the library.\n" +
+        "3. Even if previous messages in the conversation discussed deleting, removing, or modifying a document, if that document appears in the ACTIVE KNOWLEDGE BASE CATALOG, it is currently PRESENT. You MUST acknowledge it as currently present. NEVER claim a document is deleted, missing, or removed if it appears in the catalog.\n" +
+        "4. You have direct access to all documents listed in the ACTIVE KNOWLEDGE BASE CATALOG above.\n" +
+        "5. When the user asks what documents are uploaded, asks how many files exist, asks for an overview of the library, or asks questions across files, you must list and describe all currently active documents from the catalog.\n" +
+        "6. When answering, explicitly cite the exact document name and page number for every statement (e.g. [filename.pdf (Page X)]).\n" +
+        "7. If the user asks a comparative question between documents, synthesize facts from each document objectively.\n" +
+        "8. Never state that you only have access to fewer documents than those listed in the catalog.\n";
 
       if (allChunks.length > 0) {
         // 1. Generate standalone query using chat history context & document list
@@ -975,7 +994,7 @@ export default function App() {
         if (isAskingAboutAuthorStudy || isAskingAboutCreator) {
           systemPrompt = 
             "You are NeuroLens, an advanced AI document intelligence engine.\n\n" +
-            (libraryCatalog ? libraryCatalog + "\n" : "") +
+            (libraryCatalog ? libraryCatalog + "\n" + multiDocInstruction : "") +
             "When asked about your creator, developer, programmer, or builder, or asked to study your author/projects, you must answer with his real resume profile:\n\n" +
             `${developerBio}` +
             "Present this information with extreme professionalism and pride in Uditya's engineering." +
@@ -983,20 +1002,18 @@ export default function App() {
         } else {
           systemPrompt = 
             "You are NeuroLens, an advanced AI assistant.\n\n" +
-            (libraryCatalog ? libraryCatalog + "\n" : "") +
+            (libraryCatalog ? libraryCatalog + "\n" + multiDocInstruction : "") +
             "Respond to the user's question helpfully and clearly. " +
             "Respond in the same language as the user's question." +
             mathInstruction;
         }
       }
 
-      // 4. Build message logs incorporating chat history
+      // 4. Build message logs incorporating chat history (purging all internal system notifications)
       const promptMessages = [{ role: "system", content: systemPrompt }];
       messages.forEach(msg => {
-        const role = msg.role;
-        const content = msg.content;
-        if (role && content && !content.startsWith("📥 **System:**") && !content.startsWith("❌ **Error")) {
-          promptMessages.push({ role, content });
+        if (!isSystemMessage(msg)) {
+          promptMessages.push({ role: msg.role, content: msg.content });
         }
       });
       promptMessages.push({ role: "user", content: queryText });
@@ -1032,7 +1049,8 @@ export default function App() {
         {
           role: 'assistant',
           content: `❌ **Error running query:** ${error.message}\n\nPlease check your internet connection or verify your API keys in settings.`,
-          sources: []
+          sources: [],
+          isSystem: true
         }
       ]);
     } finally {
@@ -1072,7 +1090,8 @@ export default function App() {
       {
         role: 'assistant',
         content: `🗑️ **System:** Removed **${docName}** and its corresponding text chunks from the library database.`,
-        sources: []
+        sources: [],
+        isSystem: true
       }
     ]);
   };

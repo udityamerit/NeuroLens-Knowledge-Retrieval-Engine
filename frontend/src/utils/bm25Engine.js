@@ -321,7 +321,10 @@ export function isMultiDocQuery(query, documents = []) {
     'both documents', 'both files', 'compare', 'difference between', 
     'each document', 'each file', 'across the documents', 'across all',
     'what did i upload', 'what files did i upload', 'what documents do you have',
-    'list all', 'summarize everything'
+    'what documents are there', 'how many documents', 'how many files', 'how many pdfs',
+    'which documents', 'which files', 'in the library', 'active documents', 'active files',
+    'remaining files', 'remaining documents', 'total files', 'total documents',
+    'list all', 'list documents', 'list files', 'summarize everything'
   ];
   if (multiDocTriggers.some(t => q.includes(t))) return true;
 
