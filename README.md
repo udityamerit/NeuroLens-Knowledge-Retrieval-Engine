@@ -52,7 +52,7 @@ It provides **Dual Execution Modes**:
   - `llama-3.3-70b-versatile`
   - `llama-3.1-8b-instant`
 - **OpenAI Integration**: Native support for `gpt-4o`, `gpt-4o-mini`, and custom models.
-- **Hugging Face Hub**: Compatible with Hugging Face Serverless Inference Endpoints.
+- **OpenRouter Unified Hub**: Access 200+ models with one key (DeepSeek R1/V3, Llama 3.3, Gemini 2.0, Claude 3.5 Sonnet) including free `:free` models.
 - **Automatic Legacy Migration**: Deprecated models (such as `llama-3-8b-8192` or `mixtral-8x7b-32768`) are automatically migrated to high-performance active alternatives.
 
 ### 🛡️ Privacy & Secure Key Management
@@ -99,7 +99,7 @@ graph TD
     subgraph Providers ["LLM & Speech APIs"]
         Groq["Groq Cloud (Qwen, Llama 3.3/4, DeepSeek)"]:::external
         OpenAI["OpenAI (GPT-4o, GPT-4o-mini)"]:::external
-        HF["Hugging Face Hub"]:::external
+        OpenRouter["OpenRouter Unified Hub (DeepSeek, Claude, Gemini, Llama)"]:::external
         ElevenLabs["ElevenLabs Voice TTS"]:::external
     end
 
@@ -112,7 +112,7 @@ graph TD
     %% Direct browser to LLM
     UI -->|Direct Browser API Call| Groq
     UI -->|Direct Browser API Call| OpenAI
-    UI -->|Direct Browser API Call| HF
+    UI -->|Direct Browser API Call| OpenRouter
     UI -->|Speech Synthesis| ElevenLabs
 
     %% Hybrid mode
@@ -187,7 +187,7 @@ You can enter your API keys directly into the **Settings UI** in your browser, o
 # Optional: Pre-fill API keys
 GROQ_API_KEY=gsk_your_groq_api_key_here
 OPENAI_API_KEY=sk_your_openai_key_here
-HF_TOKEN=hf_your_huggingface_token_here
+OPENROUTER_API_KEY=sk-or-v1-your_openrouter_key_here
 ELEVENLABS_API_KEY=your_elevenlabs_key_here
 ```
 

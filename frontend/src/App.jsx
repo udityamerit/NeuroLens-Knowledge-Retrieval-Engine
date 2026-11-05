@@ -96,17 +96,24 @@ async function parseDOCX(arrayBuffer) {
 }
 
 // Helper to call vision API for a single model
-async function callVisionAPI(url, model, apiKey, file, base64Data) {
+async function callVisionAPI(url, model, apiKey, file, base64Data, extraHeaders = {}) {
   let effectiveApiKey = (apiKey || '').trim();
   if (!effectiveApiKey) {
-    effectiveApiKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_groq') || '').trim();
+    if (url.includes('openrouter')) {
+      effectiveApiKey = (import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_openrouter') || '').trim();
+    } else if (url.includes('openai')) {
+      effectiveApiKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_openai') || '').trim();
+    } else {
+      effectiveApiKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_groq') || '').trim();
+    }
   }
 
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${effectiveApiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      ...extraHeaders
     },
     body: JSON.stringify({
       model: model,
@@ -140,7 +147,7 @@ async function callVisionAPI(url, model, apiKey, file, base64Data) {
   return resData.choices[0].message.content;
 }
 
-// Describe/transcribe image content using Vision LLM (Groq Qwen 3.8/3.6 Vision / OpenAI GPT-4o-mini)
+// Describe/transcribe image content using Vision LLM (Groq Qwen 3.8/3.6 Vision / OpenAI GPT-4o-mini / OpenRouter)
 async function extractTextFromImage(file, provider, apiKey, modelName) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -175,8 +182,35 @@ async function extractTextFromImage(file, provider, apiKey, modelName) {
           const visionModel = modelName.startsWith('gpt-4') ? modelName : 'gpt-4o-mini';
           const resText = await callVisionAPI(url, visionModel, apiKey, file, base64Data);
           resolve(resText);
+        } else if (provider === 'openrouter') {
+          const url = "https://openrouter.ai/api/v1/chat/completions";
+          const candidates = [
+            modelName,
+            'google/gemini-2.0-flash-exp:free',
+            'meta-llama/llama-3.2-11b-vision-instruct:free',
+            'qwen/qwen-2.5-vl-72b-instruct:free',
+            'openai/gpt-4o-mini'
+          ].filter(Boolean);
+          const uniqueCandidates = [...new Set(candidates)];
+          let lastError = null;
+          for (const model of uniqueCandidates) {
+            try {
+              console.log(`Trying OpenRouter vision model: ${model}`);
+              const resText = await callVisionAPI(url, model, apiKey, file, base64Data, {
+                "HTTP-Referer": window.location.origin || "http://localhost:5173",
+                "X-Title": "NeuroLens Knowledge Retrieval Engine"
+              });
+              resolve(resText);
+              return;
+            } catch (e) {
+              console.warn(`OpenRouter vision model ${model} failed, trying fallback:`, e);
+              lastError = e;
+            }
+          }
+          reject(lastError || new Error("OpenRouter vision model failed. Please verify API key permissions."));
+          return;
         } else {
-          reject(new Error("Image analysis is supported on Groq and OpenAI providers. Please switch provider in settings."));
+          reject(new Error("Image analysis is supported on Groq, OpenAI, and OpenRouter providers. Please switch provider in settings."));
           return;
         }
       } catch (err) {
@@ -243,8 +277,8 @@ async function callLLM(provider, apiKey, modelName, messages, temperature) {
       effectiveApiKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_groq') || '').trim();
     } else if (provider === 'openai') {
       effectiveApiKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_openai') || '').trim();
-    } else if (provider === 'huggingface') {
-      effectiveApiKey = (import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_huggingface') || '').trim();
+    } else if (provider === 'openrouter') {
+      effectiveApiKey = (import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || '').trim() || (safeStorage.getItem('neurolens_key_openrouter') || '').trim();
     }
   }
 
@@ -307,39 +341,33 @@ async function callLLM(provider, apiKey, modelName, messages, temperature) {
       })
     });
     if (!response.ok) {
-      const err = await response.json();
+      const err = await response.json().catch(() => ({}));
       throw new Error(err.error?.message || "OpenAI API error");
     }
     const data = await response.json();
     return data.choices[0].message.content;
   }
-  else if (provider === 'huggingface') {
-    // Construct formatted text containing prompt history
-    const promptText = messages.map(m => `${m.role === 'system' ? 'System' : m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join("\n") + "\nAssistant:";
-    const response = await fetch(`https://api-inference.huggingface.co/models/${modelName}`, {
+  else if (provider === 'openrouter') {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
+        "Authorization": `Bearer ${effectiveApiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": window.location.origin || "http://localhost:5173",
+        "X-Title": "NeuroLens Knowledge Retrieval Engine"
       },
       body: JSON.stringify({
-        inputs: promptText,
-        parameters: { temperature: temperature, max_new_tokens: 1000 }
+        model: modelName,
+        messages: messages,
+        temperature: temperature
       })
     });
     if (!response.ok) {
-      const err = await response.text();
-      throw new Error(err || "Hugging Face Hub API error");
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `OpenRouter API error (${response.status})`);
     }
     const data = await response.json();
-    if (Array.isArray(data)) {
-      let generatedText = data[0].generated_text || "";
-      if (generatedText.startsWith(promptText)) {
-        generatedText = generatedText.substring(promptText.length);
-      }
-      return generatedText;
-    }
-    return data.generated_text || JSON.stringify(data);
+    return data.choices[0].message.content;
   }
   else {
     throw new Error(`Unsupported LLM provider: ${provider}`);
@@ -473,19 +501,28 @@ export default function App() {
   
   // Initialize settings with fallback defaults, locally stored API keys, env vars, and backend URL
   const [settings, setSettings] = useState(() => {
-    const provider = 'groq';
+    let provider = safeStorage.getItem('neurolens_provider') || 'groq';
+    if (provider === 'huggingface') {
+      provider = 'openrouter';
+      safeStorage.setItem('neurolens_provider', 'openrouter');
+    }
     const envKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim();
     const envElevenKey = (import.meta.env.VITE_ELEVENLABS_API_KEY || '').trim();
     
     // Auto-migrate legacy model name
-    let storedModel = safeStorage.getItem('neurolens_model_name') || 'qwen/qwen3.8-27b';
-    if (!storedModel || storedModel.includes('llama-3.3') || storedModel.includes('llama-3.1') || storedModel.includes('llama-4-scout') || storedModel.includes('mixtral')) {
-      storedModel = 'qwen/qwen3.8-27b';
+    let storedModel = safeStorage.getItem('neurolens_model_name') || (provider === 'openrouter' ? 'deepseek/deepseek-chat' : 'qwen/qwen3.8-27b');
+    if (!storedModel || storedModel.includes('llama-3.3') || storedModel.includes('llama-3.1') || storedModel.includes('llama-4-scout') || storedModel.includes('mixtral') || storedModel.includes('meta-llama/Llama-3.2-3B') || storedModel.includes('Mistral-7B') || storedModel.includes('DeepSeek-R1-Distill-Qwen-32B') || storedModel.includes('Qwen/Qwen2.5-72B-Instruct')) {
+      storedModel = provider === 'openrouter' ? 'deepseek/deepseek-chat' : 'qwen/qwen3.8-27b';
       safeStorage.setItem('neurolens_model_name', storedModel);
     }
 
     const storedKey = (safeStorage.getItem(`neurolens_key_${provider}`) || '').trim();
-    const effectiveKey = storedKey || envKey;
+    let effectiveKey = storedKey;
+    if (!effectiveKey) {
+      if (provider === 'groq') effectiveKey = envKey;
+      else if (provider === 'openai') effectiveKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim();
+      else if (provider === 'openrouter') effectiveKey = (import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || '').trim();
+    }
     if (effectiveKey && !storedKey) {
       safeStorage.setItem(`neurolens_key_${provider}`, effectiveKey);
     }
@@ -566,13 +603,15 @@ export default function App() {
               resolvedKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim();
             } else if (settings.provider === 'openai') {
               resolvedKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim();
+            } else if (settings.provider === 'openrouter') {
+              resolvedKey = (import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || '').trim();
             }
           }
           if (!resolvedKey) {
             throw new Error(`API Key for ${settings.provider.toUpperCase()} is required to analyze image documents. Please open settings and add your API key.`);
           }
-          if (settings.provider !== 'groq' && settings.provider !== 'openai') {
-            throw new Error("Image analysis requires Groq or OpenAI provider. Please configure their credentials in Settings.");
+          if (settings.provider !== 'groq' && settings.provider !== 'openai' && settings.provider !== 'openrouter') {
+            throw new Error("Image analysis requires Groq, OpenAI, or OpenRouter provider. Please configure their credentials in Settings.");
           }
           
           const extractedText = await extractTextFromImage(file, settings.provider, resolvedKey, settings.modelName);
@@ -870,8 +909,8 @@ export default function App() {
           resolvedKey = (import.meta.env.VITE_GROQ_API_KEY || '').trim();
         } else if (settings.provider === 'openai') {
           resolvedKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim();
-        } else if (settings.provider === 'huggingface') {
-          resolvedKey = (import.meta.env.VITE_HF_TOKEN || import.meta.env.VITE_HUGGINGFACE_API_KEY || '').trim();
+        } else if (settings.provider === 'openrouter') {
+          resolvedKey = (import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || '').trim();
         }
       }
 

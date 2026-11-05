@@ -25,14 +25,23 @@ const PROVIDERS = {
       { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', tag: 'LEGACY' }
     ]
   },
-  huggingface: {
-    name: 'Hugging Face',
-    defaultModel: 'meta-llama/Llama-3.2-3B-Instruct',
+  openrouter: {
+    name: 'OpenRouter',
+    defaultModel: 'deepseek/deepseek-chat',
     models: [
-      { id: 'meta-llama/Llama-3.2-3B-Instruct', name: 'Llama 3.2 3B Instruct (Free Serverless)', tag: 'RECOMMENDED' },
-      { id: 'mistralai/Mistral-7B-Instruct-v0.3', name: 'Mistral 7B Instruct v0.3 (Free Serverless)', tag: 'FAST' },
-      { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B Instruct (High Capacity)', tag: 'FLAGSHIP' },
-      { id: 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B', name: 'DeepSeek R1 Distill Qwen 32B (Reasoning)', tag: 'REASONING' }
+      { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3 (State of the Art • 64k Context)', tag: 'RECOMMENDED' },
+      { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1 (Advanced Reasoning • 100% Free)', tag: 'FREE' },
+      { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B Instruct (High Capacity • 100% Free)', tag: 'FREE' },
+      { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Next-Gen Multimodal • 100% Free)', tag: 'FREE' },
+      { id: 'google/gemini-2.0-flash-thinking-exp:free', name: 'Gemini 2.0 Flash Thinking (Deep Reasoning • 100% Free)', tag: 'FREE' },
+      { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2 3B Instruct (Ultra-Fast • 100% Free)', tag: 'FREE' },
+      { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (Leading Reasoning & Code)', tag: 'FLAGSHIP' },
+      { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku (Fast & Intelligent)', tag: 'FAST' },
+      { id: 'openai/gpt-4o', name: 'GPT-4o (Omni Multimodal Flagship)', tag: 'FLAGSHIP' },
+      { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini (Fast & Cost Efficient)', tag: 'FAST' },
+      { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1 (Flagship Deep Reasoning)', tag: 'REASONING' },
+      { id: 'qwen/qwen-2.5-72b-instruct', name: 'Qwen 2.5 72B Instruct (Top Open Weights)', tag: 'POWERFUL' },
+      { id: 'mistralai/mistral-large-2411', name: 'Mistral Large 2411 (Advanced Reasoning)', tag: 'POWERFUL' }
     ]
   }
 };
@@ -41,25 +50,28 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
   const envKeys = {
     groq: (import.meta.env.VITE_GROQ_API_KEY || '').trim(),
     openai: (import.meta.env.VITE_OPENAI_API_KEY || '').trim(),
-    huggingface: (import.meta.env.VITE_HF_TOKEN || '').trim()
+    openrouter: (import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.OPENROUTER_API_KEY || '').trim()
   };
 
-  const [provider, setProvider] = useState(settings.provider || 'groq');
+  const [provider, setProvider] = useState(() => {
+    let p = settings.provider || safeStorage.getItem('neurolens_provider') || 'groq';
+    if (p === 'huggingface') return 'openrouter';
+    return p;
+  });
 
   // Load API keys stored in localStorage for convenience with fallback to env keys
   const [savedKeys, setSavedKeys] = useState(() => {
     const groqKey = (safeStorage.getItem('neurolens_key_groq') || '').trim() || envKeys.groq;
     const openaiKey = (safeStorage.getItem('neurolens_key_openai') || '').trim() || envKeys.openai;
-    const hfKey = (safeStorage.getItem('neurolens_key_huggingface') || '').trim() || envKeys.huggingface;
-    return { groq: groqKey, openai: openaiKey, huggingface: hfKey };
+    const openrouterKey = (safeStorage.getItem('neurolens_key_openrouter') || '').trim() || envKeys.openrouter;
+    return { groq: groqKey, openai: openaiKey, openrouter: openrouterKey };
   });
 
   const [apiKey, setApiKey] = useState(() => {
-    const p = settings.provider || 'groq';
+    const p = (settings.provider === 'huggingface' ? 'openrouter' : (settings.provider || 'groq'));
     const directKey = (settings.apiKey || '').trim();
     const stored = (safeStorage.getItem(`neurolens_key_${p}`) || '').trim();
     const envK = envKeys[p] || '';
-    // If the key is the pre-configured environment key, keep input empty so placeholder masks it
     if (directKey && directKey !== envK) return directKey;
     if (stored && stored !== envK) return stored;
     return '';
@@ -68,21 +80,37 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
   // Auto-migrate any deprecated model names from previous session cache
   const [modelName, setModelName] = useState(() => {
     const current = settings.modelName || 'qwen/qwen3.8-27b';
-    if (!current || current.includes('llama-3.3') || current.includes('llama-3.1') || current.includes('llama-4-scout') || current.includes('mixtral')) {
+    if (!current || current.includes('llama-3.3') || current.includes('llama-3.1') || current.includes('llama-4-scout') || current.includes('mixtral') || current.includes('meta-llama/Llama-3.2-3B') || current.includes('Mistral-7B') || current.includes('DeepSeek-R1-Distill-Qwen-32B')) {
+      if (settings.provider === 'openrouter') return 'deepseek/deepseek-chat';
       return 'qwen/qwen3.8-27b';
     }
     return current;
   });
+
   const [temperature, setTemperature] = useState(settings.temperature || 0.3);
   const [k, setK] = useState(settings.k || 5);
   const [showKey, setShowKey] = useState(false);
 
+  // Dynamic OpenRouter Models state
+  const [openRouterModels, setOpenRouterModels] = useState(() => {
+    try {
+      const cached = safeStorage.getItem('neurolens_openrouter_models');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {
+      // ignore
+    }
+    return null;
+  });
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [modelSearch, setModelSearch] = useState('');
+  const [isCustomModel, setIsCustomModel] = useState(false);
+
   // Update the model list and apiKey when provider changes
   const handleProviderChange = (newProvider) => {
     setProvider(newProvider);
+    setModelSearch(''); // reset search term when changing provider
     const stored = (safeStorage.getItem(`neurolens_key_${newProvider}`) || '').trim();
     const envK = envKeys[newProvider] || '';
-    // Keep input empty if using environment key to prevent exposing it
     if (stored && stored !== envK) {
       setApiKey(stored);
     } else {
@@ -93,6 +121,7 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
     const availableModelIds = PROVIDERS[newProvider].models.map(m => typeof m === 'string' ? m : m.id);
     if (!availableModelIds.includes(modelName)) {
       setModelName(PROVIDERS[newProvider].defaultModel);
+      setIsCustomModel(false);
     }
   };
 
@@ -102,11 +131,52 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
     setSavedKeys(prev => ({ ...prev, [provider]: val }));
   };
 
+  // Fetch live model catalog directly from OpenRouter API
+  const handleFetchOpenRouterModels = async () => {
+    setIsFetchingModels(true);
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/models");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data && Array.isArray(data.data)) {
+        const formatted = data.data.map(m => {
+          const isFree = m.id.endsWith(':free') || (m.pricing && m.pricing.prompt === '0' && m.pricing.completion === '0');
+          let tag = isFree ? 'FREE' : '';
+          if (!tag && m.id.includes('r1')) tag = 'REASONING';
+          else if (!tag && (m.id.includes('claude-3.5-sonnet') || m.id.includes('gpt-4o'))) tag = 'FLAGSHIP';
+          
+          return {
+            id: m.id,
+            name: `${m.name || m.id}${isFree ? ' (100% Free)' : ''}`,
+            tag: tag || (isFree ? 'FREE' : undefined),
+            contextLength: m.context_length
+          };
+        });
+        
+        // Sort: Free models and popular models first
+        formatted.sort((a, b) => {
+          if (a.tag === 'FREE' && b.tag !== 'FREE') return -1;
+          if (b.tag === 'FREE' && a.tag !== 'FREE') return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        setOpenRouterModels(formatted);
+        safeStorage.setItem('neurolens_openrouter_models', JSON.stringify(formatted));
+      }
+    } catch (err) {
+      console.warn("Could not fetch live OpenRouter models:", err);
+      alert("Failed to fetch live models from OpenRouter. Please verify your internet connection. Default curated models remain available.");
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
   const handleSave = () => {
     const customKey = (apiKey || '').trim();
     const effectiveKey = customKey || envKeys[provider] || (safeStorage.getItem(`neurolens_key_${provider}`) || '').trim();
     
     // Save to local storage for convenience
+    safeStorage.setItem('neurolens_provider', provider);
     if (customKey) {
       safeStorage.setItem(`neurolens_key_${provider}`, customKey);
     }
@@ -123,6 +193,29 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
     });
     onClose();
   };
+
+  // Determine list of displayed models for current provider across ALL providers
+  let allProviderModels = PROVIDERS[provider]?.models || [];
+  if (provider === 'openrouter' && openRouterModels && openRouterModels.length > 0) {
+    // Merge curated models at the beginning, followed by all live models
+    const curatedIds = new Set(PROVIDERS.openrouter.models.map(m => m.id));
+    const additional = openRouterModels.filter(m => !curatedIds.has(m.id));
+    allProviderModels = [...PROVIDERS.openrouter.models, ...additional];
+  }
+
+  // Filter with search term across ALL providers
+  let displayedModels = allProviderModels;
+  if (modelSearch.trim()) {
+    const q = modelSearch.trim().toLowerCase();
+    displayedModels = allProviderModels.filter(m => {
+      const id = typeof m === 'string' ? m : m.id;
+      const name = typeof m === 'string' ? m : m.name;
+      const tag = typeof m === 'object' && m.tag ? m.tag : '';
+      return id.toLowerCase().includes(q) || 
+             name.toLowerCase().includes(q) || 
+             tag.toLowerCase().includes(q);
+    });
+  }
 
   if (!isOpen) return null;
 
@@ -168,22 +261,16 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
                 >
                   {info.name}
                   {id === 'groq' && (
+                    <span style={styles.freeBadge}>FREE</span>
+                  )}
+                  {id === 'openrouter' && (
                     <span style={{
-                      position: 'absolute',
-                      top: '-7px',
-                      right: '-4px',
-                      fontSize: '8px',
-                      fontWeight: '800',
-                      color: '#22c55e',
-                      background: 'rgba(34, 197, 94, 0.15)',
-                      border: '1px solid rgba(34, 197, 94, 0.35)',
-                      padding: '1px 5px',
-                      borderRadius: '4px',
-                      letterSpacing: '0.8px',
-                      textTransform: 'uppercase',
-                      boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
-                      lineHeight: '1.3'
-                    }}>FREE</span>
+                      ...styles.freeBadge,
+                      color: '#38bdf8',
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      boxShadow: '0 0 10px rgba(56, 189, 248, 0.2)'
+                    }}>ROUTER</span>
                   )}
                 </button>
               ))}
@@ -252,6 +339,32 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
                     <span style={{ color: '#94a3b8' }}>No API key configured. Enter a key above or configure it in .env.</span>
                   )}
                 </>
+              ) : provider === 'openrouter' ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%', background: '#38bdf8', boxShadow: '0 0 8px #38bdf8' }}></span>
+                    <span style={{ color: '#38bdf8', fontWeight: '700' }}>OpenRouter Unified Hub</span>
+                    <span style={{ color: '#94a3b8' }}>— Use any model (DeepSeek, Llama, Claude, Gemini).</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px', flexWrap: 'wrap', gap: '4px' }}>
+                    <span style={{ color: '#94a3b8' }}>
+                      {(apiKey || envKeys.openrouter) ? '✓ Key connected & masked' : 'Key format: sk-or-v1-...'}
+                    </span>
+                    <a 
+                      href="https://openrouter.ai/keys" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{ color: '#38bdf8', textDecoration: 'none', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}
+                    >
+                      Get OpenRouter API Key
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                      </svg>
+                    </a>
+                  </div>
+                </>
               ) : (
                 <span style={{ color: '#94a3b8' }}>
                   {(apiKey || envKeys[provider]) ? '✓ Connected & Masked (Hidden for privacy)' : 'Leaving blank will use the environment fallback key if configured.'}
@@ -262,29 +375,251 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave, onOpe
 
           {/* Model Selection */}
           <div style={styles.formGroup}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
               <label style={styles.label}>Model Selection</label>
-              <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: '600' }}>
-                Latest Active Models
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {provider === 'openrouter' && (
+                  <button
+                    type="button"
+                    onClick={handleFetchOpenRouterModels}
+                    disabled={isFetchingModels}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.1)',
+                      border: '1px solid rgba(56, 189, 248, 0.3)',
+                      borderRadius: '4px',
+                      color: '#38bdf8',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      padding: '2px 8px',
+                      cursor: isFetchingModels ? 'wait' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Fetch all dynamic models available on OpenRouter"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M23 4v6h-6"></path>
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                    {isFetchingModels ? 'Fetching...' : openRouterModels ? `Live Models (${openRouterModels.length})` : 'Fetch Live Catalog'}
+                  </button>
+                )}
+                <span style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: '600' }}>
+                  {allProviderModels.length} Models Available
+                </span>
+              </div>
             </div>
+
+            {/* Universal Search Bar for Models across all providers */}
+            <div style={{ position: 'relative', marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+              <div style={{ position: 'absolute', left: '12px', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+              <input
+                type="text"
+                placeholder={`Search ${PROVIDERS[provider].name} models by name or id (e.g. ${
+                  provider === 'groq' ? 'qwen, oss, compound...' :
+                  provider === 'openai' ? 'gpt-4o, o3-mini...' :
+                  'deepseek, free, claude, gemini...'
+                })`}
+                value={modelSearch}
+                onChange={(e) => setModelSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (displayedModels.length > 0) {
+                      const first = displayedModels[0];
+                      const firstId = typeof first === 'string' ? first : first.id;
+                      setModelName(firstId);
+                      setIsCustomModel(false);
+                    } else if (provider === 'openrouter' && modelSearch.trim()) {
+                      setModelName(modelSearch.trim());
+                      setIsCustomModel(true);
+                    }
+                  }
+                }}
+                style={{
+                  ...styles.input,
+                  padding: '9px 36px 9px 34px',
+                  fontSize: '12.5px',
+                  borderRadius: '8px'
+                }}
+              />
+              {modelSearch && (
+                <button
+                  type="button"
+                  onClick={() => setModelSearch('')}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title="Clear search"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Quick-select pills when searching */}
+            {modelSearch && displayedModels.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '2px' }}>
+                  Matches ({displayedModels.length}):
+                </span>
+                {displayedModels.slice(0, 6).map(m => {
+                  const id = typeof m === 'string' ? m : m.id;
+                  const isSelected = modelName === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setModelName(id);
+                        setIsCustomModel(false);
+                      }}
+                      style={{
+                        background: isSelected ? 'rgba(157, 78, 221, 0.3)' : 'rgba(255, 255, 255, 0.05)',
+                        border: `1px solid ${isSelected ? 'var(--color-primary)' : 'rgba(255, 255, 255, 0.12)'}`,
+                        borderRadius: '6px',
+                        color: isSelected ? '#ffffff' : '#94a3b8',
+                        fontSize: '11px',
+                        padding: '3px 8px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'all 0.15s'
+                      }}
+                      title={id}
+                    >
+                      <span style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {id}
+                      </span>
+                      {isSelected && (
+                        <span style={{ color: '#22c55e', fontWeight: 'bold' }}>✓</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* If 0 matches found */}
+            {modelSearch && displayedModels.length === 0 && (
+              <div style={{
+                padding: '10px 14px',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#fca5a5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px'
+              }}>
+                <span>No models found matching "<strong>{modelSearch}</strong>".</span>
+                <button
+                  type="button"
+                  onClick={() => setModelSearch('')}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.1)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: '#ffffff',
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Reset Filter
+                </button>
+              </div>
+            )}
+
             <select
-              value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
+              value={isCustomModel ? '__custom__' : modelName}
+              onChange={(e) => {
+                if (e.target.value === '__custom__') {
+                  setIsCustomModel(true);
+                } else {
+                  setIsCustomModel(false);
+                  setModelName(e.target.value);
+                }
+              }}
               style={styles.select}
             >
-              {PROVIDERS[provider].models.map(m => {
+              {displayedModels.map(m => {
                 const id = typeof m === 'string' ? m : m.id;
                 const label = typeof m === 'string' ? m : m.name;
+                const tag = m.tag ? ` [${m.tag}]` : '';
                 return (
                   <option key={id} value={id} style={styles.option}>
-                    {label}
+                    {label}{tag}
                   </option>
                 );
               })}
+              {provider === 'openrouter' && (
+                <option value="__custom__" style={styles.option}>
+                  ✏️ Enter Custom Model ID...
+                </option>
+              )}
             </select>
-          </div>
 
+            {/* Custom Model ID text field */}
+            {isCustomModel && provider === 'openrouter' && (
+              <div style={{ marginTop: '8px' }}>
+                <label style={{ ...styles.label, fontSize: '11px', color: '#38bdf8' }}>
+                  Custom OpenRouter Model Identifier:
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. mistralai/mistral-nemo or google/gemini-flash-1.5"
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value.trim())}
+                  style={{
+                    ...styles.input,
+                    marginTop: '4px',
+                    padding: '8px 12px',
+                    borderColor: '#38bdf8'
+                  }}
+                />
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Enter any valid model ID listed on <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer" style={{ color: '#38bdf8' }}>openrouter.ai/models</a>.
+                </div>
+              </div>
+            )}
+
+            {/* Active Model Indicator */}
+            {modelName && (
+              <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', flexWrap: 'wrap' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Selected:</span>
+                <code style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px', color: '#c084fc', fontSize: '11px' }}>
+                  {modelName}
+                </code>
+                {modelName.includes(':free') && (
+                  <span style={{ color: '#22c55e', fontWeight: '700', fontSize: '10px', background: 'rgba(34, 197, 94, 0.1)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                    100% FREE (0 CREDITS)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="responsive-grid">
             {/* Temperature Slider */}
@@ -453,19 +788,14 @@ const styles = {
   formGroup: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px'
+    gap: '8px'
   },
   label: {
-    fontFamily: 'var(--font-heading)',
-    fontSize: '14px',
+    fontSize: '12px',
     fontWeight: '600',
-    color: '#e2e8f0',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
     letterSpacing: '0.5px'
-  },
-  infoSpan: {
-    fontSize: '11px',
-    color: 'var(--color-secondary)',
-    opacity: 0.8
   },
   providerGrid: {
     display: 'grid',
@@ -481,6 +811,22 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s'
+  },
+  freeBadge: {
+    position: 'absolute',
+    top: '-7px',
+    right: '-4px',
+    fontSize: '8px',
+    fontWeight: '800',
+    color: '#22c55e',
+    background: 'rgba(34, 197, 94, 0.15)',
+    border: '1px solid rgba(34, 197, 94, 0.35)',
+    padding: '1px 5px',
+    borderRadius: '4px',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase',
+    boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
+    lineHeight: '1.3'
   },
   inputContainer: {
     position: 'relative',

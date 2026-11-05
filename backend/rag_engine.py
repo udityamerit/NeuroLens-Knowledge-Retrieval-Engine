@@ -142,6 +142,7 @@ class RAGEngine:
                 # Check for API keys in environment
                 groq_key = os.getenv("GROQ_API_KEY")
                 openai_key = os.getenv("OPENAI_API_KEY")
+                openrouter_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("VITE_OPENROUTER_API_KEY")
                 
                 with open(file_path, "rb") as img_file:
                     img_data = img_file.read()
@@ -210,7 +211,7 @@ class RAGEngine:
                             print(f"      Model {model} failed: {e}")
                             last_err = e
                     
-                    if not extracted_text and not openai_key:
+                    if not extracted_text and not openai_key and not openrouter_key:
                         raise last_err or Exception("All Groq vision models failed.")
                 
                 # Try OpenAI if Groq key doesn't exist but OpenAI key does
@@ -223,6 +224,47 @@ class RAGEngine:
                     }
                     payload = {
                         "model": "gpt-4o-mini",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "You are an advanced document analyst and OCR engine. Describe this image in extreme detail, transcribing all text, labels, structures, charts, graphs, or tables word-for-word. Provide a complete textual description so it can be fully indexable by a search engine."
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{mime_type};base64,{base64_str}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "temperature": 0.1
+                    }
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers=headers,
+                        method="POST"
+                    )
+                    with urllib.request.urlopen(req) as res:
+                        res_data = json.loads(res.read().decode("utf-8"))
+                        extracted_text = res_data["choices"][0]["message"]["content"]
+                
+                # Try OpenRouter if OpenAI key doesn't exist but OpenRouter key does
+                elif openrouter_key:
+                    print("    Using OpenRouter Vision Model...")
+                    url = "https://openrouter.ai/api/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {openrouter_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8000",
+                        "X-Title": "NeuroLens Knowledge Retrieval Engine"
+                    }
+                    payload = {
+                        "model": "google/gemini-2.0-flash-exp:free",
                         "messages": [
                             {
                                 "role": "user",
@@ -471,6 +513,28 @@ def is_system_notification(msg: Dict[str, Any]) -> bool:
                 print(f"🔄 Standalone Query generated: '{rephrased}' (original: '{query}')")
                 return rephrased if rephrased else query
 
+            elif provider.lower() == "openrouter":
+                import urllib.request
+                import json
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8000",
+                    "X-Title": "NeuroLens Knowledge Retrieval Engine"
+                }
+                payload = {
+                    "model": model_name or "deepseek/deepseek-chat",
+                    "messages": [{"role": "user", "content": rephrase_prompt}],
+                    "temperature": 0.0
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=30) as res:
+                    res_data = json.loads(res.read().decode("utf-8"))
+                    rephrased = res_data["choices"][0]["message"]["content"].strip().strip('"').strip("'")
+                    print(f"🔄 Standalone Query generated via OpenRouter: '{rephrased}' (original: '{query}')")
+                    return rephrased if rephrased else query
+
         except Exception as e:
             print(f"⚠️ Failed to generate standalone query: {e}. Using raw query.")
             
@@ -494,8 +558,8 @@ def is_system_notification(msg: Dict[str, Any]) -> bool:
                 resolved_key = os.environ.get("GROQ_API_KEY", "")
             elif provider.lower() == "openai":
                 resolved_key = os.environ.get("OPENAI_API_KEY", "")
-            elif provider.lower() == "huggingface":
-                resolved_key = os.environ.get("HF_TOKEN", "") or os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
+            elif provider.lower() == "openrouter":
+                resolved_key = os.environ.get("OPENROUTER_API_KEY", "") or os.environ.get("VITE_OPENROUTER_API_KEY", "")
 
         # 2. Generate standalone search query using chat history
         search_query = query
@@ -658,27 +722,41 @@ def is_system_notification(msg: Dict[str, Any]) -> bool:
                 response = llm.invoke(messages)
                 answer = response.content
 
-            elif provider.lower() == "huggingface":
+            elif provider.lower() == "openrouter":
                 if not resolved_key:
-                    raise ValueError("Hugging Face API token not found. Please provide it in Settings.")
-                from langchain_huggingface import HuggingFaceEndpoint
-                llm = HuggingFaceEndpoint(
-                    repo_id=model_name,
-                    huggingfacehub_api_token=resolved_key,
-                    temperature=temperature,
-                    timeout=30
-                )
+                    raise ValueError("OpenRouter API key not found. Please provide it in Settings.")
+                import urllib.request
+                import json
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {resolved_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:8000",
+                    "X-Title": "NeuroLens Knowledge Retrieval Engine"
+                }
                 
-                # Construct formatted text containing prompt history
-                full_prompt = f"System: {system_prompt}\n"
+                # Build messages list incorporating chat history
+                messages = [{"role": "system", "content": system_prompt}]
                 if history:
                     for msg in history:
                         if not is_system_notification(msg):
-                            speaker = "User" if msg.get("role") == "user" else "Assistant"
-                            full_prompt += f"{speaker}: {msg.get('content')}\n"
-                full_prompt += f"User: {query}\nAssistant:"
-                
-                answer = llm.invoke(full_prompt)
+                            messages.append({"role": msg.get("role"), "content": msg.get("content")})
+                messages.append({"role": "user", "content": query})
+
+                payload = {
+                    "model": model_name or "deepseek/deepseek-chat",
+                    "messages": messages,
+                    "temperature": temperature
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers,
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=60) as res:
+                    res_data = json.loads(res.read().decode("utf-8"))
+                    answer = res_data["choices"][0]["message"]["content"]
 
             else:
                 # Fallback mock/rule-based answer if no valid provider
@@ -690,7 +768,7 @@ def is_system_notification(msg: Dict[str, Any]) -> bool:
                     source = chunk["metadata"].get("source", "Unknown")
                     page_info = f" (Page {chunk['metadata'].get('page')})" if "page" in chunk["metadata"] else ""
                     answer += f"📄 **From {source}{page_info}:**\n> {chunk['content']}\n\n"
-                answer += "\nConfigure a valid LLM API Key (Groq, OpenAI, or Hugging Face) in the settings to generate synthesis answers."
+                answer += "\nConfigure a valid LLM API Key (Groq, OpenAI, or OpenRouter) in the settings to generate synthesis answers."
 
         except Exception as e:
             answer = f"Error calling {provider} LLM: {str(e)}\n\n"
