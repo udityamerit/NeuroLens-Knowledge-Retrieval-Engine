@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "C:/Users/uditm/Documents/GitHub/NeuroLens Knowledge Retrieval Engine/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "C:/Users/uditm/Documents/GitHub/NeuroLens Knowledge Retrieval Engine/backend", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["--prefix", "C:/Users/uditm/Documents/GitHub/NeuroLens Knowledge Retrieval Engine/frontend", "run", "dev", "--", "--port", "5173"],
+      "port": 5173
+    }
+  ]
+}
