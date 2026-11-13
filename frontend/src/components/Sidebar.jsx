@@ -11,6 +11,7 @@ export default function Sidebar({ org, docs, stats, selected, onToggle, onChange
   const [jobs, setJobs] = useState([]);
   const nextId = useRef(1);
   const [url, setUrl] = useState('');
+  const [over, setOver] = useState(false);
   const canWrite = hasRole(org.role, 'member');
 
   const patchJob = (id, patch) => setJobs((js) => js.map((j) => (j.id === id ? { ...j, ...patch } : j)));
@@ -90,7 +91,10 @@ export default function Sidebar({ org, docs, stats, selected, onToggle, onChange
       {open && <div className="responsive-backdrop" onClick={onClose} />}
       <aside className={`sidebar-wrapper glass-panel side-panel ${open ? 'open' : ''} ${hidden ? 'is-hidden' : ''}`} aria-hidden={hidden || undefined}>
         <div className="side-head">
-          <h2>Library <span className="muted small">· {docs.length}</span></h2>
+          <div>
+            <h2>Knowledge Library</h2>
+            <span className="file-count">{docs.length} file{docs.length === 1 ? '' : 's'}</span>
+          </div>
           <button className="icon-btn lib-hide-btn" onClick={onHide} aria-label="Hide library" title="Hide library">«</button>
           <button className="mobile-sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">✕</button>
         </div>
@@ -98,9 +102,22 @@ export default function Sidebar({ org, docs, stats, selected, onToggle, onChange
         {canWrite ? (
           <div className="side-actions">
             <input ref={fileRef} type="file" multiple accept={ACCEPT} hidden onChange={(e) => upload([...e.target.files])} />
-            <button className="btn btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
-              {busy ? 'Adding to your library…' : 'Upload files'}
+            <button
+              type="button"
+              className={`dropzone ${over ? 'over' : ''}`}
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+              onDragLeave={() => setOver(false)}
+              onDrop={(e) => { e.preventDefault(); setOver(false); if (!busy) upload([...e.dataTransfer.files]); }}
+            >
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <strong>{busy ? 'Adding to your library…' : 'Drag & drop documents'}</strong>
+              <span className="muted small">or click to browse · PDF, Word, PowerPoint, TXT, CSV, images</span>
             </button>
+            <span className="side-label">🌐 Add from URL</span>
             <form onSubmit={addUrl} className="url-form">
               <input type="url" placeholder="https://… add a web page" value={url} onChange={(e) => setUrl(e.target.value)} maxLength={2000} />
               <button className="btn btn-ghost" disabled={busy || !url.trim()}>Add</button>
