@@ -671,6 +671,15 @@ docker compose up --build                       # SQLite, UI on http://localhost
 docker compose --profile postgres up --build    # also starts PostgreSQL (set DATABASE_URL + POSTGRES_PASSWORD)
 ```
 
+### GitHub Pages UI + hosted API
+
+GitHub Pages serves only static files, so the UI can be published there but the FastAPI backend must run elsewhere. The repo ships both halves:
+
+1. **API** – on [Render](https://render.com): *New → Blueprint →* select this repo (uses [`render.yaml`](render.yaml)). Enter `PUBLIC_BASE_URL` (the service URL) and your `OPENROUTER_API_KEY` when asked. Cross-site login uses a `SameSite=None; Secure` refresh cookie and a CORS allow-list that contains only the Pages origin.
+2. **UI** – in the GitHub repo set *Settings → Secrets and variables → Actions → Variables →* `API_URL` = the API's https URL, and *Settings → Pages → Source:* **GitHub Actions**. [`pages.yml`](.github/workflows/pages.yml) then builds and publishes on every push to `main` that touches `frontend/`. It refuses to run (leaving the current site untouched) until `API_URL` is set, and embeds no secrets.
+
+Browsers that block third-party cookies (Safari, Chrome with the setting on) cannot keep the refresh cookie across the two sites, so users there must sign in again after reloading. Putting UI and API behind one domain (the Docker setup above) avoids this.
+
 Production checklist:
 
 - [ ] Terminate TLS in front and set `TRUST_PROXY_HEADERS=true`.

@@ -1,0 +1,44 @@
+# Render Blueprint for the NeuroLens API (FastAPI + SQLite on a persistent disk).
+# The UI is published separately on GitHub Pages (.github/workflows/pages.yml).
+#
+# Steps: Render dashboard -> New -> Blueprint -> pick this repo. Render asks for the values marked
+# `sync: false`. After the first deploy, set PUBLIC_BASE_URL to the service URL shown by Render
+# (e.g. https://neurolens-api.onrender.com), then put the same URL in the GitHub repository
+# variable API_URL so the UI knows where the API lives.
+services:
+  - type: web
+    name: neurolens-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter            # a persistent disk needs a paid plan; free instances lose SQLite data on restart
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: neurolens-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: NEUROLENS_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+      # The UI lives on another site, so the refresh cookie must be SameSite=None (it is also Secure).
+      - key: COOKIE_SAMESITE
+        value: none
+      # Origin only: scheme + host, no path.
+      - key: CORS_ORIGINS
+        value: '["https://udityamerit.github.io"]'
+      - key: FRONTEND_URL
+        value: https://udityamerit.github.io/NeuroLens-Knowledge-Retrieval-Engine
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # Platform-wide fallback key; organisations can also add their own in the app.
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

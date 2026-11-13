@@ -138,7 +138,7 @@ function Invites({ org, onToast }) {
     e.preventDefault();
     try {
       const inv = await api.createInvite(org.id, email, role);
-      setLink(inv.accept_url || `${window.location.origin}/?invite=${inv.token}`);
+      setLink(inv.accept_url || `${window.location.origin}${import.meta.env.BASE_URL}?invite=${inv.token}`);
       setEmail(''); reload();
     } catch (err) { onToast(err.message, 'error'); }
   }

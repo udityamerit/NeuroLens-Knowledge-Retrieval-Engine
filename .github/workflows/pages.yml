@@ -1,0 +1,62 @@
+name: Deploy UI to GitHub Pages
+
+# Publishes the React UI. The UI is static; all logic (login, organisations, RAG, LLM calls) runs on the
+# separately hosted API (see render.yaml). No secrets are used or embedded in the build: the only value
+# baked in is the public API URL, read from the repository *variable* API_URL.
+#   Settings -> Secrets and variables -> Actions -> Variables -> New repository variable
+#   API_URL = https://<your-api-host>      (no trailing slash)
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Require API_URL
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "::error::Repository variable API_URL is not set. Deploy the API first, then set API_URL to its https URL. The currently published site was left untouched."
+            exit 1
+          fi
+          case "$API_URL" in https://*) ;; *) echo "::error::API_URL must start with https://"; exit 1 ;; esac
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+
+      - run: npm run build
+        working-directory: frontend
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_API_URL: ${{ vars.API_URL }}
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
