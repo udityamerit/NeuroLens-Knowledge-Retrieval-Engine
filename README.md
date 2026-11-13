@@ -1,253 +1,96 @@
-# NeuroLens Knowledge Retrieval Engine 🧠✨
+# NeuroLens — Knowledge Retrieval Engine
 
-<div align="center">
+A multi-tenant RAG (retrieval-augmented generation) service. Teams sign in, upload documents or web pages to a private
+organisation library, and ask questions that are answered from those documents with cited sources.
 
-![NeuroLens Banner](banner.png)
+**Architecture:** FastAPI backend is the system of record (users, organisations, documents, vectors, audit log, LLM keys).
+The React/Vite UI holds no secrets: it keeps a 15-minute access token in memory and an HttpOnly refresh cookie.
 
-[![React 19](https://img.shields.io/badge/Frontend-React%2019-61dafb?logo=react&logoColor=black)](https://react.dev/)
-[![Vite 8](https://img.shields.io/badge/Bundler-Vite%208-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![LangChain](https://img.shields.io/badge/Orchestration-LangChain-1C3C3C?logo=langchain&logoColor=white)](https://langchain.com/)
-[![FAISS](https://img.shields.io/badge/Vector%20Store-FAISS-00599C)](https://github.com/facebookresearch/faiss)
-[![KaTeX](https://img.shields.io/badge/Math-KaTeX-3298DC)](https://katex.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## Features
 
-**A Next-Generation, Dual-Architecture Document Retrieval-Augmented Generation (RAG) System featuring Multi-PDF Global Awareness, Real-time KaTeX LaTeX Rendering, and Cyberpunk Sci-Fi Glassmorphism.**
+| Area | What is implemented |
+|---|---|
+| Accounts | Email + password (argon2id, strength policy, lockout after 5 failures), Google / GitHub / Microsoft SSO |
+| Sessions | Short-lived JWT access token, rotating refresh tokens with reuse detection, CSRF header, password change signs out other devices |
+| Organisations | Roles owner / admin / member / viewer, email invitations, SSO-domain auto-join, last-owner protection, personal workspace per user |
+| Isolation | Every route is scoped to an organisation (non-members get 404); documents, vectors and chat are per-org |
+| Keys | Platform keys from the server environment, or per-organisation keys encrypted at rest (only the last 4 characters are ever returned) |
+| RAG | PDF, DOCX, TXT/MD/CSV, images (vision), web pages; hybrid vector (FAISS) + BM25 retrieval with rank fusion; cited sources |
+| Guardrails | Prompt-injection screening, document content fenced as data, secret / PII redaction, canary-based system-prompt-leak check, output length cap |
+| Abuse limits | Per-IP and per-user rate limits, per-org storage and daily question quotas, upload size / zip-bomb / page limits |
+| Web fetching | SSRF-safe: destination IPs validated at connect time, redirects re-validated, size and content-type limits |
+| Audit | Security-relevant events per organisation, visible to admins |
+| Ops | `/health`, `/ready`, Docker images, docker-compose (SQLite or Postgres), CI with tests, lint, build and dependency audit |
 
-[Live Demo](https://udityamerit.github.io/NeuroLens-Knowledge-Retrieval-Engine/) • [Architecture](#-architecture-overview) • [Key Features](#-key-features) • [Installation](#-setup--installation) • [Author](#-author)
+## Quick start (development)
 
-</div>
+Requirements: Python 3.12, Node 20+.
 
----
-
-## 🌟 Overview
-
-**NeuroLens** is a high-performance Document Retrieval-Augmented Generation (RAG) platform designed to ingest, index, and analyze complex documents with sub-millisecond retrieval speeds and zero context starvation. 
-
-It provides **Dual Execution Modes**:
-1. **Zero-Backend Standalone Mode (Browser-Native)**: Runs 100% inside your web browser (ideal for GitHub Pages / static hosting). PDF parsing (PDF.js), DOCX extraction (Mammoth), chunking, BM25 fair-share ranking, and IndexedDB persistence all execute client-side.
-2. **Full-Stack Hybrid Mode (FastAPI + FAISS)**: High-throughput Python server leveraging SentenceTransformers (`all-MiniLM-L6-v2`) and FAISS vector databases for dense semantic search.
-
----
-
-## 🚀 Key Features
-
-### 📚 Multi-Document Fair-Share Intelligence
-- **Fair-Share Round-Robin Retrieval (`searchBM25MultiDoc`)**: Solves single-document context starvation. Retrieved context passages are fairly distributed across all active documents so long files do not drown out shorter ones.
-- **Dynamic Context Quotas**: Scales retrieved chunks dynamically based on library size ($k = \max(k, \min(\text{documents.length} \times 3, 15))$).
-- **Cross-Document Stratified Summarization**: When asked to "summarize all" or "compare documents", NeuroLens pulls opening abstracts, core body sections, and conclusions from *every single uploaded file*.
-- **Executive Catalog Awareness**: Injects a structured catalog containing file names, page counts, chunk metrics, and opening synopses directly into the LLM system prompt for 100% inventory awareness.
-- **Ground Truth Override & History Isolation**: Internal system notifications (uploads, deletions, URL scrapes) are filtered from chat history, ensuring re-added files (e.g. `cap1.pdf`) are recognized with live ground truth priority.
-
-### 📐 Beautiful KaTeX LaTeX Mathematical Rendering
-- **Full LaTeX Math Support**: Automatically renders display equations (`$$...$$`, `\[...\]`, `\begin{equation}...\end{equation}`, `\begin{cases}...\end{cases}`, matrices, fractions, integrals) and inline formulas (`$...$`, `\(...\)`).
-- **Document Preview Math Rendering**: Mathematical formulas within uploaded PDFs and DOCX files render with KaTeX inside the chunk preview modal.
-- **Neon Math Aesthetics**: Styled with responsive overflow scrollbars and subtle sci-fi cyan glow.
-
-### 🤖 Modern Free & Production LLM Catalog
-- **Groq Free Models**: Pre-configured with the latest ultra-fast models including:
-  - `qwen/qwen3.8-27b` (Default recommended free model)
-  - `deepseek-r1-distill-llama-70b`
-  - `meta-llama/llama-4-scout-17b-16k`
-  - `llama-3.3-70b-versatile`
-  - `llama-3.1-8b-instant`
-- **OpenAI Integration**: Native support for `gpt-4o`, `gpt-4o-mini`, and custom models.
-- **OpenRouter Unified Hub**: Access 200+ models with one key (DeepSeek R1/V3, Llama 3.3, Gemini 2.0, Claude 3.5 Sonnet) including free `:free` models.
-- **Automatic Legacy Migration**: Deprecated models (such as `llama-3-8b-8192` or `mixtral-8x7b-32768`) are automatically migrated to high-performance active alternatives.
-
-### 🛡️ Privacy & Secure Key Management
-- **Zero-Exposure Key Storage**: All API keys are stored locally in the browser with obfuscation. Keys are never printed in public console logs, never shared with third parties, and never sent to our servers.
-- **Interactive Security Shield**: Settings modal features a password mask toggle, direct links to free API dashboards, and real-time validation badges.
-
-### 🎙️ Voice & Multimodal Interaction
-- **Dual TTS Engine**: Integrated **ElevenLabs** neural speech synthesis with seamless automatic fallback to the **Web Speech API**.
-- **Math-to-Speech Parser**: Converts LaTeX formulas and code blocks into natural, speakable English or Hindi so voice synthesis sounds fluent.
-- **Voice Speech-to-Text Input**: Dictate your questions directly via browser microphone with dual English/Hindi language toggles.
-- **Camera OCR Scanner**: Scan physical pages or whiteboards using your device camera or upload image files directly.
-
-### 🔮 Immersive Sci-Fi Holographic Interface
-- **Dynamic Neural Synapse Canvas**: An interactive, physics-based network animation with drifting nodes and glowing electrical impulses traveling across synaptic pathways.
-- **Active Document Scope Pill**: Toggle between querying **All Sources** or **Focus Mode** on a single specific document with a single click.
-- **Responsive Mobile Drawer**: Full mobile, tablet, and desktop responsiveness with slide-out sidebar overlay.
-
----
-
-## 🛠️ Architecture Overview
-
-```mermaid
-graph TD
-    classDef client fill:#0d1b2a,stroke:#00f5d4,stroke-width:2px,color:#fff;
-    classDef server fill:#1b263b,stroke:#9d4edd,stroke-width:2px,color:#fff;
-    classDef database fill:#0f172a,stroke:#3a0ca3,stroke-width:2px,color:#fff;
-    classDef external fill:#2b2d42,stroke:#ef233c,stroke-width:2px,color:#fff;
-
-    subgraph Browser ["Client-Side (React 19 / Vite 8)"]
-        UI["Holographic UI & Synapse Canvas"]:::client
-        DocParser["Client Parsers: PDF.js / Mammoth / OCR"]:::client
-        BM25["Fair-Share BM25 & Stratified Sampler"]:::client
-        IndexedDB[("IndexedDB Storage (GB Scale)")]:::database
-        KaTeX["KaTeX Formula Engine"]:::client
-    end
-
-    subgraph BackendServer ["Optional Backend (FastAPI / Python)"]
-        API["FastAPI REST Endpoints"]:::server
-        RAG["LangChain RAG Engine"]:::server
-        Embedder["SentenceTransformers all-MiniLM-L6-v2"]:::server
-        FAISS[("FAISS Vector Index")]:::database
-    end
-
-    subgraph Providers ["LLM & Speech APIs"]
-        Groq["Groq Cloud (Qwen, Llama 3.3/4, DeepSeek)"]:::external
-        OpenAI["OpenAI (GPT-4o, GPT-4o-mini)"]:::external
-        OpenRouter["OpenRouter Unified Hub (DeepSeek, Claude, Gemini, Llama)"]:::external
-        ElevenLabs["ElevenLabs Voice TTS"]:::external
-    end
-
-    %% Client flow
-    UI --> DocParser
-    DocParser --> BM25
-    BM25 --> IndexedDB
-    UI --> KaTeX
-
-    %% Direct browser to LLM
-    UI -->|Direct Browser API Call| Groq
-    UI -->|Direct Browser API Call| OpenAI
-    UI -->|Direct Browser API Call| OpenRouter
-    UI -->|Speech Synthesis| ElevenLabs
-
-    %% Hybrid mode
-    UI -.->|Optional Hybrid Request| API
-    API --> RAG
-    RAG --> Embedder
-    Embedder --> FAISS
-    RAG --> Groq
-```
-
----
-
-## 📂 Supported File Types & Ingestion
-
-| Source Type | Extension | Ingestion Method | Features |
-| :--- | :--- | :--- | :--- |
-| **PDF Documents** | `.pdf` | PDF.js / PyPDF | Multi-page text extraction, page tracking, LaTeX math preservation |
-| **Word Documents** | `.docx` | Mammoth / python-docx | Preserves paragraph hierarchy and clean body text |
-| **Plain Text** | `.txt`, `.md` | TextDecoder / Native | Fast direct text parsing |
-| **Webpages / URLs** | `http://`, `https://` | AllOrigins Proxy / BeautifulSoup | Ingests documentation, articles, and blogs directly from links |
-| **Images & Camera** | `.png`, `.jpg`, `.jpeg` | Vision LLM OCR | Scans text and math equations from photos and physical notes |
-
----
-
-## ⚡ Setup & Installation
-
-### Prerequisites
-- **Node.js** (v18 or higher)
-- **Python** (v3.10 or higher — *optional, only needed for backend FAISS mode*)
-
-### Quick Start (Windows)
-Double-click `run.bat` or run:
-```powershell
-.\run.bat
-```
-*This automatically initializes the Python virtual environment, installs dependencies, and launches both the backend on `http://localhost:8000` and the frontend on `http://localhost:5173`.*
-
----
-
-### Manual Setup
-
-#### 1. Frontend Setup (Standalone or Connected)
 ```bash
-cd frontend
-npm install
-npm run dev
+cp .env.example .env          # optional in dev; add GROQ_API_KEY etc. to enable answers
+run.bat                       # Windows: creates the venv, installs, starts both servers
 ```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-#### 2. Backend Setup (Optional FAISS Acceleration)
+Or manually:
+
 ```bash
-cd backend
-python -m venv venv
-
-# On Windows:
-venv\Scripts\activate
-# On macOS/Linux:
-source venv/bin/activate
-
-pip install -r requirements.txt
-python app.py
-```
-FastAPI server runs at [http://localhost:8000](http://localhost:8000). Interactive Swagger documentation is available at `http://localhost:8000/docs`.
-
----
-
-## 🔑 Environment Configuration
-
-You can enter your API keys directly into the **Settings UI** in your browser, or configure a `.env` file in the project root:
-
-```env
-# Optional: Pre-fill API keys
-GROQ_API_KEY=gsk_your_groq_api_key_here
-OPENAI_API_KEY=sk_your_openai_key_here
-OPENROUTER_API_KEY=sk-or-v1-your_openrouter_key_here
-ELEVENLABS_API_KEY=your_elevenlabs_key_here
+cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt
+.venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
+cd frontend && npm ci && npm run dev      # http://localhost:5173 (proxies /api to :8000)
 ```
 
-> 💡 **Tip**: Groq API keys are **100% free** and provide instant access to `qwen/qwen3.8-27b` and `llama-3.3-70b-versatile` at over 300+ tokens/second. You can get a free key at [console.groq.com](https://console.groq.com/keys).
+Register an account in the UI. Without any LLM key, uploads and retrieval work but chat returns a clear
+"no API key configured" message; add a platform key in `.env` or an organisation key under **Settings → API keys**.
 
----
+## Configuration
 
-## 🌐 Production Deployment (GitHub Pages)
+All settings are environment variables; see [`.env.example`](.env.example) for the full list. Essentials for production:
 
-The frontend is fully configured for automated GitHub Pages continuous deployment:
-1. Fork or clone this repository.
-2. In `frontend/vite.config.js`, verify the `base` path matches your repo name:
-   ```javascript
-   export default defineConfig({
-     plugins: [react()],
-     base: '/NeuroLens-Knowledge-Retrieval-Engine/',
-   })
-   ```
-3. Push to the `main` branch. The automated workflow `.github/workflows/deploy.yml` will build and publish the application to GitHub Pages.
+- `NEUROLENS_ENV=production` — enforces a `SECRET_KEY` (≥ 32 chars), Secure cookies and a non-wildcard CORS list.
+- `ENCRYPTION_KEY` — Fernet key for organisation API keys. **If you lose it, stored organisation keys are unreadable.**
+- `DATABASE_URL` — defaults to SQLite under `DATA_DIR`. For Postgres use `postgresql+psycopg://user:pass@host/db`.
+- `FRONTEND_URL`, `PUBLIC_BASE_URL`, `CORS_ORIGINS`, `TRUSTED_HOSTS` — set to your real URLs.
 
----
+### Single sign-on
 
-## 🧪 Testing
+Create an OAuth application with each provider and register this redirect URI:
 
-### Frontend Production Build
+```
+<PUBLIC_BASE_URL>/api/auth/sso/<google|github|microsoft>/callback
+```
+
+Then set that provider's `*_CLIENT_ID` / `*_CLIENT_SECRET`. A provider with no credentials is hidden from the login page.
+Organisation owners can set an **SSO domain** (Settings → General) so verified users from that domain join automatically.
+
+## Deploy with Docker
+
 ```bash
-cd frontend
-npm run build
+cp .env.example .env     # set NEUROLENS_ENV=production, SECRET_KEY, ENCRYPTION_KEY, URLs, keys
+docker compose up --build                       # SQLite, UI on http://localhost:8080
+docker compose --profile postgres up --build    # also start Postgres (set DATABASE_URL + POSTGRES_PASSWORD)
 ```
 
-### Formula Rendering Verification
+Put a TLS-terminating reverse proxy in front (and set `TRUST_PROXY_HEADERS=true`, `TRUSTED_HOSTS`, `FRONTEND_URL`/`PUBLIC_BASE_URL` to the https URLs).
+The nginx container serves the UI and proxies `/api`, so everything is one origin.
+
+## Tests
+
 ```bash
-cd frontend
-node test_formula.mjs
+cd backend && .venv/Scripts/python -m pytest      # ~140 tests, no network or API keys needed
+cd frontend && npm run lint && npm run build
 ```
 
-### Backend Diagnostics
-```bash
-python scratch/test_gpt_oss.py
-```
+The suite covers authentication, token tampering/expiry/reuse, cross-organisation isolation, roles, invitations, SSRF,
+upload validation, retrieval, guardrails and quota/rate limiting. LLM calls are mocked.
 
----
+## Known limitations
 
-## 📄 License
+- **Not verified against live services:** real LLM responses (default model ids may need adjusting to what your provider currently serves), real SSO consent flows, and PostgreSQL. These need your credentials/infrastructure.
+- **Single worker:** the retrieval index cache and rate limiter are in-process. Run one API process, or move them to shared storage (e.g. Redis, pgvector) before scaling out.
+- **No email delivery:** invitations produce a link the admin shares; there is no password-reset email or email verification flow yet.
+- **No migrations tool:** tables are created on start. Adopt Alembic before changing the schema in a deployed system.
+- **Encryption at rest** covers organisation API keys only; uploaded documents and vectors are stored unencrypted in the database. Use disk/database encryption if that matters for your data.
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+## Licence
 
----
-
-## 👨‍💻 Author
-
-**Uditya Narayan Tiwari**  
-*Machine Learning Engineer & Generative AI Developer*  
-Specializing in AI/ML, B.Tech CSE (AI & ML) at VIT Bhopal University.
-
-- 🌐 **Portfolio**: [udityanarayantiwari.netlify.app](https://udityanarayantiwari.netlify.app/)
-- 🐙 **GitHub**: [@udityamerit](https://github.com/udityamerit)
-- 💼 **LinkedIn**: [Uditya Narayan Tiwari](https://www.linkedin.com/in/uditya-narayan-tiwari-562332289/)
-- 🧠 **Knowledge Base**: [udityaknowledgebase.netlify.app](https://udityaknowledgebase.netlify.app/)
-
-<div align="center">
-  <sub>Engineered with precision for seamless document intelligence. If you find this project helpful, please give it a ⭐️!</sub>
-</div>
+See [LICENSE](LICENSE).

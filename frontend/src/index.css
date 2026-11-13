@@ -245,6 +245,33 @@ body {
   z-index: 1;
 }
 
+/* Desktop: the library column can be folded away to give the chat the full width. */
+.lib-show-btn { display: none; }
+@media (min-width: 769px) {
+  .sidebar-wrapper {
+    transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1), margin 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.2s ease, visibility 0s linear 0s;
+  }
+  .sidebar-wrapper.is-hidden {
+    width: 0;
+    margin-right: -10px; /* swallow the workspace gap so the chat reaches the edge */
+    padding-left: 0;
+    padding-right: 0;
+    border-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+    transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1), margin 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.2s ease, visibility 0s linear 0.28s;
+  }
+  .lib-show-btn { display: inline-flex; }
+}
+@media (max-width: 768px) {
+  .lib-hide-btn, .lib-show-btn { display: none !important; }
+}
+.chat-title { flex: 1; min-width: 0; }
+
 .responsive-backdrop {
   display: none;
 }

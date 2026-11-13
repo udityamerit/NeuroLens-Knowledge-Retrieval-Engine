@@ -1,65 +1,15 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <!-- Early JavaScript crash catcher for WebView debugging -->
-    <script>
-      (function() {
-        // Safe body wrapper to prevent null reference errors on early script executions
-        try {
-          Object.defineProperty(document, 'body', {
-            get: function() {
-              return document.getElementsByTagName('body')[0] || document.head || document.documentElement;
-            },
-            configurable: true
-          });
-        } catch (e) {}
-
-        function displayHTMLRawError(title, err) {
-          try {
-            var div = document.createElement('div');
-            div.style.position = 'fixed';
-            div.style.top = '0';
-            div.style.left = '0';
-            div.style.width = '100%';
-            div.style.background = '#7f1d1d';
-            div.style.color = '#fecaca';
-            div.style.padding = '16px';
-            div.style.zIndex = '99999';
-            div.style.fontFamily = 'monospace';
-            div.style.fontSize = '12px';
-            div.style.overflow = 'auto';
-            div.style.maxHeight = '50vh';
-            div.style.borderBottom = '3px solid #dc2626';
-            div.innerHTML = '<strong>' + title + '</strong><pre style="white-space:pre-wrap;margin-top:8px;">' + err + '</pre>';
-            (document.body || document.documentElement).appendChild(div);
-          } catch(e) {}
-        }
-
-        window.onerror = function(message, source, lineno, colno, error) {
-          var errStr = message + '\nAt: ' + source + ':' + lineno + ':' + colno;
-          displayHTMLRawError('JavaScript Error', errStr);
-          return false;
-        };
-        window.addEventListener('unhandledrejection', function(event) {
-          var reason = event.reason;
-          var errStr = 'Unhandled Rejection: ' + (reason && reason.stack ? reason.stack : reason);
-          displayHTMLRawError('Promise Rejection', errStr);
-        });
-      })();
-    </script>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg?v=2" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NeuroLens - Smart RAG Document Analyst</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- KaTeX Mathematical Typography -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
-    <!-- PDF.js and Mammoth for client-side document parsing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   </head>
   <body>
     <div id="root"></div>

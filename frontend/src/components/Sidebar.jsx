@@ -1,786 +1,143 @@
-import { useState, useRef } from 'react';
-import Logo from './Logo';
+import { useRef, useState } from 'react';
+import { api, hasRole } from '../api';
+import IngestProgress from './IngestProgress';
 
-export default function Sidebar({ 
-  documents, 
-  onUpload, 
-  onFetchUrl, 
-  onOpenSettings, 
-  onOpenCamera, 
-  onPreviewDocument, 
-  onDeleteDocument, 
-  isUploading, 
-  isFetchingUrl,
-  uploadProgress,
-  allChunks = [],
-  activeFilter = 'ALL',
-  onSelectFilter = () => {}
-}) {
-  const [isDragActive, setIsDragActive] = useState(false);
-  const [urlInput, setUrlInput] = useState('');
-  const fileInputRef = useRef(null);
+const fmtBytes = (n) => (n === 0 ? '0 KB' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const ACCEPT = '.pdf,.docx,.pptx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp';
 
-  const handleDrag = (e) => {
+export default function Sidebar({ org, docs, stats, selected, onToggle, onChanged, onRemoved, onPreview, onToast, open, hidden = false, onClose, onHide }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [jobs, setJobs] = useState([]);
+  const nextId = useRef(1);
+  const [url, setUrl] = useState('');
+  const canWrite = hasRole(org.role, 'member');
+
+  const patchJob = (id, patch) => setJobs((js) => js.map((j) => (j.id === id ? { ...j, ...patch } : j)));
+  const dropJobsLater = (ids, ms) => setTimeout(() => setJobs((js) => js.filter((j) => !ids.includes(j.id))), ms);
+
+  // Files go one at a time: each gets real upload progress, and each appears in the library the moment it
+  // is ready instead of the whole batch waiting on the slowest file.
+  async function upload(files) {
+    if (!files.length) return;
+    setBusy(true);
+    const batch = files.map((f) => ({ id: nextId.current++, name: f.name, size: f.size, kind: 'file', phase: 'queued', pct: 0 }));
+    setJobs((js) => [...js, ...batch]);
+    let added = 0;
+    const failures = [];
+    for (let i = 0; i < files.length; i += 1) {
+      const id = batch[i].id;
+      patchJob(id, { phase: 'uploading' });
+      try {
+        const res = await api.uploadFile(org.id, files[i], {
+          onProgress: (p) => patchJob(id, { pct: p }),
+          onSent: () => patchJob(id, { phase: 'processing', pct: 1 }),
+        });
+        if (res.errors?.length) throw new Error(res.errors.map((e) => e.error).join('; '));
+        added += res.documents.length;
+        patchJob(id, { phase: 'done', chunks: res.documents[0]?.chunk_count ?? 0 });
+        onChanged();
+      } catch (e) {
+        failures.push(`${files[i].name}: ${e.message}`);
+        patchJob(id, { phase: 'error', error: e.message });
+      }
+    }
+    if (failures.length) onToast(failures.join('\n'), 'error');
+    else onToast(`Added ${added} document${added === 1 ? '' : 's'}.`);
+    dropJobsLater(batch.map((b) => b.id), failures.length ? 8000 : 3500);
+    setBusy(false);
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
+  async function addUrl(e) {
     e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setIsDragActive(true);
-    } else if (e.type === "dragleave") {
-      setIsDragActive(false);
+    if (!url.trim()) return;
+    setBusy(true);
+    const id = nextId.current++;
+    setJobs((js) => [...js, { id, name: url.trim(), size: 0, kind: 'url', phase: 'processing', pct: 1 }]);
+    try {
+      const doc = await api.ingestUrl(org.id, url.trim());
+      setUrl('');
+      patchJob(id, { phase: 'done', chunks: doc.chunk_count });
+      onToast('Page added to your library.');
+      onChanged();
+    } catch (err) {
+      patchJob(id, { phase: 'error', error: err.message });
+      onToast(err.message, 'error');
+    } finally {
+      dropJobsLater([id], 3500);
+      setBusy(false);
     }
-  };
+  }
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onUpload(e.dataTransfer.files);
+  async function remove(doc) {
+    if (!window.confirm(`Remove "${doc.name}" from the library?`)) return;
+    try {
+      await api.deleteDocument(org.id, doc.id);
+      onRemoved?.([doc.id]); // disappear from the list at once; the refetch below only refreshes the totals
+      onToast(`Removed "${doc.name}".`);
+    } catch (e) {
+      onToast(e.message, 'error');
+    } finally {
+      onChanged();
     }
-  };
+  }
 
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      onUpload(e.target.files);
-    }
-  };
-
-  const triggerFileInput = () => {
-    fileInputRef.current.click();
-  };
-
-  const handleUrlSubmit = (e) => {
-    e.preventDefault();
-    const url = urlInput.trim();
-    if (!url) return;
-    
-    // Basic URL validation
-    if (!url.startsWith('http://') && !url.startsWith('https://') && !url.includes('.')) {
-      alert('Please enter a valid URL (e.g., https://example.com)');
-      return;
-    }
-
-    const fullUrl = (!url.startsWith('http://') && !url.startsWith('https://')) ? `https://${url}` : url;
-    onFetchUrl(fullUrl);
-    setUrlInput('');
-  };
-
-  const getFileIcon = (filename) => {
-    // Check if this is a URL source (starts with globe emoji)
-    if (filename.startsWith('🌐')) {
-      return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-        </svg>
-      );
-    }
-
-    const ext = filename.split('.').pop().toLowerCase();
-    if (ext === 'pdf') {
-      return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <polyline points="10 9 9 9 8 9" />
-        </svg>
-      );
-    } else if (ext === 'docx' || ext === 'doc') {
-      return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <line x1="10" y1="9" x2="8" y2="9" />
-        </svg>
-      );
-    } else if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) {
-      return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <polyline points="21 15 16 10 5 21" />
-        </svg>
-      );
-    } else {
-      return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f5d4" strokeWidth="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-          <polyline points="10 9 9 9 8 9" />
-        </svg>
-      );
-    }
-  };
+  const pct = stats ? Math.min(100, Math.round((stats.storage_bytes / stats.storage_limit_bytes) * 100)) : 0;
 
   return (
-    <div className="glass-panel" style={styles.sidebar}>
-      {/* Brand & Logo */}
-      <div style={styles.logoContainer}>
-        <Logo size={42} />
-      </div>
+    <>
+      {open && <div className="responsive-backdrop" onClick={onClose} />}
+      <aside className={`sidebar-wrapper glass-panel side-panel ${open ? 'open' : ''} ${hidden ? 'is-hidden' : ''}`} aria-hidden={hidden || undefined}>
+        <div className="side-head">
+          <h2>Library <span className="muted small">· {docs.length}</span></h2>
+          <button className="icon-btn lib-hide-btn" onClick={onHide} aria-label="Hide library" title="Hide library">«</button>
+          <button className="mobile-sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">✕</button>
+        </div>
 
-      {/* Upload Zone */}
-      <div 
-        onDragEnter={handleDrag}
-        onDragOver={handleDrag}
-        onDragLeave={handleDrag}
-        onDrop={handleDrop}
-        onClick={triggerFileInput}
-        className={`animate-pulse-glow ${isDragActive ? 'glow-cyan' : ''}`}
-        style={{
-          ...styles.uploadZone,
-          borderColor: isDragActive ? 'var(--color-secondary)' : isUploading ? 'var(--color-primary-glow)' : 'var(--border-light)',
-          background: isDragActive ? 'rgba(0, 245, 212, 0.05)' : isUploading ? 'rgba(157, 78, 221, 0.03)' : 'rgba(255, 255, 255, 0.01)'
-        }}
-      >
-        <input 
-          ref={fileInputRef}
-          type="file" 
-          multiple
-          accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,.gif"
-          onChange={handleFileChange}
-          style={{ display: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        />
-        
-        {isUploading ? (
-          <div style={styles.uploadInner}>
-            <div style={styles.spinner} className="animate-spin" />
-            <p style={styles.uploadText}>
-              {uploadProgress?.phase || 'Analyzing & indexing source...'}
-            </p>
-            {uploadProgress && uploadProgress.total > 1 ? (
-              <div style={{ width: '100%', marginTop: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--color-secondary)', marginBottom: '4px' }}>
-                  <span>Page {uploadProgress.current} / {uploadProgress.total}</span>
-                  <span>{uploadProgress.percent}%</span>
-                </div>
-                <div style={{ width: '100%', height: '4px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                  <div style={{ 
-                    width: `${uploadProgress.percent}%`, 
-                    height: '100%', 
-                    background: 'linear-gradient(90deg, var(--color-primary), var(--color-secondary))', 
-                    transition: 'width 0.2s ease', 
-                    boxShadow: '0 0 8px var(--color-secondary)' 
-                  }} />
-                </div>
-                <p style={{ ...styles.uploadSubtext, marginTop: '6px' }}>
-                  {uploadProgress.fileName} {uploadProgress.speed ? `• ${uploadProgress.speed}` : ''}
-                </p>
-              </div>
-            ) : (
-              <p style={styles.uploadSubtext}>
-                {uploadProgress?.fileName ? `Reading ${uploadProgress.fileName}` : 'Running Vision LLM / extracting facts'}
-              </p>
-            )}
+        {canWrite ? (
+          <div className="side-actions">
+            <input ref={fileRef} type="file" multiple accept={ACCEPT} hidden onChange={(e) => upload([...e.target.files])} />
+            <button className="btn btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
+              {busy ? 'Adding to your library…' : 'Upload files'}
+            </button>
+            <form onSubmit={addUrl} className="url-form">
+              <input type="url" placeholder="https://… add a web page" value={url} onChange={(e) => setUrl(e.target.value)} maxLength={2000} />
+              <button className="btn btn-ghost" disabled={busy || !url.trim()}>Add</button>
+            </form>
+            <IngestProgress jobs={jobs} />
           </div>
         ) : (
-          <div style={styles.uploadInner}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" strokeWidth="2" style={{ marginBottom: '8px' }}>
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <p style={styles.uploadText}>Drag & Drop documents</p>
-            <p style={styles.uploadSubtext}>Supports PDF, DOCX, TXT, Images</p>
-          </div>
-        )}
-      </div>
-
-      {/* Camera Button Container */}
-      <div style={styles.uploadButtonsRow}>
-        <button 
-          onClick={onOpenCamera} 
-          style={styles.cameraSubBtn}
-          disabled={isUploading}
-          className="sidebar-camera-btn"
-          title="Scan Document with Camera"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '6px' }}>
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-            <circle cx="12" cy="13" r="4" />
-          </svg>
-          Use Camera
-        </button>
-      </div>
-
-      {/* URL Fetch Section */}
-      <form onSubmit={handleUrlSubmit} style={styles.urlSection}>
-        <div style={styles.urlHeader}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="2" y1="12" x2="22" y2="12" />
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-          </svg>
-          <span style={styles.urlLabel}>Add from URL</span>
-        </div>
-        <div style={styles.urlInputRow}>
-          <input
-            type="text"
-            placeholder="Paste a webpage URL..."
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            disabled={isFetchingUrl}
-            style={styles.urlInput}
-          />
-          <button
-            type="submit"
-            disabled={isFetchingUrl || !urlInput.trim()}
-            style={{
-              ...styles.urlFetchBtn,
-              opacity: (isFetchingUrl || !urlInput.trim()) ? 0.4 : 1,
-              cursor: (isFetchingUrl || !urlInput.trim()) ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {isFetchingUrl ? (
-              <div style={styles.urlSpinner} className="animate-spin" />
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                <polyline points="22 4 12 12 9 9" />
-              </svg>
-            )}
-          </button>
-        </div>
-        {isFetchingUrl && (
-          <p style={styles.urlFetchingText} className="animate-fade-in">
-            Fetching & parsing web content...
-          </p>
-        )}
-      </form>
-
-      {/* Document Registry List */}
-      <div style={styles.docsSection}>
-        <div style={styles.sectionHeader}>
-          <h3 style={styles.sectionTitle}>Knowledge Library</h3>
-          <span style={styles.badge}>{documents.length} files</span>
-        </div>
-
-        {/* Multi-Document Scope Selector */}
-        {documents.length > 1 && (
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-            <button
-              type="button"
-              onClick={() => onSelectFilter('ALL')}
-              style={{
-                flex: 1,
-                background: activeFilter === 'ALL' ? 'rgba(0, 245, 212, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                border: activeFilter === 'ALL' ? '1px solid var(--color-secondary)' : '1px solid rgba(255, 255, 255, 0.08)',
-                color: activeFilter === 'ALL' ? '#00f5d4' : 'var(--text-muted)',
-                padding: '5px 8px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '5px',
-                transition: 'all 0.2s',
-                boxShadow: activeFilter === 'ALL' ? '0 0 8px rgba(0, 245, 212, 0.2)' : 'none'
-              }}
-              title="Query across all uploaded documents simultaneously"
-            >
-              <span>📚 All Sources</span>
-              <span style={{ fontSize: '10px', opacity: 0.8 }}>({documents.length})</span>
-            </button>
-          </div>
+          <p className="muted small pad">Viewers can search and chat but not change the library.</p>
         )}
 
-        <div style={styles.docList}>
-          {documents.length === 0 ? (
-            <div style={styles.emptyState}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" style={{ marginBottom: '8px' }}>
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Library is empty</p>
+        <div className="doc-list">
+          {docs.length === 0 && <p className="muted small pad">No documents yet. Upload PDFs (scanned ones too), Word, PowerPoint, text, images or add a web page.</p>}
+          {docs.map((d) => (
+            <div key={d.id} className={`doc-card-item ${selected.has(d.id) ? 'selected' : ''}`}>
+              <label className="doc-check" title="Restrict answers to the ticked documents">
+                <input type="checkbox" checked={selected.has(d.id)} onChange={() => onToggle(d.id)} />
+              </label>
+              <button className="doc-main" onClick={() => onPreview(d)} title="Preview chunks">
+                <span className="doc-name">{d.name}</span>
+                <span className="muted small">
+                  {d.kind.toUpperCase()} · {fmtBytes(d.size_bytes)} · {d.chunk_count} chunks
+                  {d.suspicious_chunks > 0 && <span className="warn" title="Contains text that looks like instructions to an AI"> ⚠ {d.suspicious_chunks} flagged</span>}
+                </span>
+              </button>
+              {canWrite && <button className="icon-btn" onClick={() => remove(d)} aria-label={`Delete ${d.name}`}>🗑</button>}
             </div>
-          ) : (
-            documents.map((doc, idx) => {
-              const docChunks = allChunks.filter(c => c.metadata && c.metadata.source === doc);
-              const uniquePages = new Set(docChunks.map(c => c.metadata?.page).filter(Boolean));
-              const pageText = uniquePages.size > 0 ? `${uniquePages.size} pages • ` : '';
-              const statsLabel = docChunks.length > 0 ? `${pageText}${docChunks.length} chunks` : (doc.startsWith('🌐') ? 'URL Indexed' : 'Indexed');
-              const isFocused = activeFilter === doc;
-
-              return (
-                <div 
-                  key={idx} 
-                  onClick={() => onPreviewDocument(doc)}
-                  className="animate-fade-in doc-card-item"
-                  style={{
-                    ...styles.docCard,
-                    borderColor: isFocused ? '#00f5d4' : 'rgba(255, 255, 255, 0.08)',
-                    background: isFocused ? 'rgba(0, 245, 212, 0.06)' : styles.docCard.background,
-                    boxShadow: isFocused ? '0 0 10px rgba(0, 245, 212, 0.15)' : 'none',
-                    animationDelay: `${idx * 0.05}s`,
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div style={styles.docIcon}>
-                    {getFileIcon(doc)}
-                  </div>
-                  <div style={styles.docInfo}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <p style={styles.docName} title={doc}>{doc}</p>
-                      {isFocused && (
-                        <span style={{
-                          fontSize: '9px',
-                          color: '#00f5d4',
-                          background: 'rgba(0, 245, 212, 0.15)',
-                          padding: '1px 5px',
-                          borderRadius: '4px',
-                          fontWeight: 'bold',
-                          flexShrink: 0
-                        }}>
-                          FOCUSED
-                        </span>
-                      )}
-                    </div>
-                    <div style={styles.docStatusRow}>
-                      <span style={{
-                        ...styles.statusDot,
-                        background: doc.startsWith('🌐') ? '#38bdf8' : 'var(--color-secondary)',
-                        boxShadow: doc.startsWith('🌐') ? '0 0 6px #38bdf8' : '0 0 6px var(--color-secondary)'
-                      }} />
-                      <span style={styles.statusText}>{statsLabel}</span>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {documents.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectFilter(isFocused ? 'ALL' : doc);
-                        }}
-                        style={{
-                          background: isFocused ? 'rgba(0, 245, 212, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                          border: isFocused ? '1px solid #00f5d4' : '1px solid rgba(255, 255, 255, 0.12)',
-                          color: isFocused ? '#00f5d4' : 'var(--text-muted)',
-                          borderRadius: '4px',
-                          padding: '3px 6px',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s'
-                        }}
-                        title={isFocused ? "Focused on this file. Click to query all files" : "Focus chat queries on this document"}
-                      >
-                        {isFocused ? 'All' : 'Focus'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteDocument(doc);
-                      }}
-                      className="doc-delete-btn"
-                      style={styles.deleteDocBtn}
-                      title="Remove this source"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
+          ))}
         </div>
-      </div>
 
-      {/* Bottom Controls */}
-      <div style={styles.bottomSection}>
-        <div style={styles.controlsRow}>
-          {/* Groq Free API Banner */}
-          <div
-            style={styles.groqBannerCompact}
-            className="groq-free-banner"
-          >
-            <div style={styles.groqBannerInner}>
-              <div style={styles.groqBadgeRow}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                </svg>
-                <span style={styles.groqBannerTitleCompact}>Groq API</span>
-                <span style={styles.freeBadgeCompact}>FREE</span>
-              </div>
-              <span style={styles.groqBannerSubCompact}>Free model execution</span>
-            </div>
+        {stats && (
+          <div className="side-foot muted small">
+            <div className="bar"><div style={{ width: `${pct}%` }} /></div>
+            {fmtBytes(stats.storage_bytes)} of {fmtBytes(stats.storage_limit_bytes)} used · {stats.queries_today}/{stats.query_quota} questions today
+            {selected.size > 0 && <div>Answering only from {selected.size} selected document{selected.size === 1 ? '' : 's'}.</div>}
           </div>
-
-          <button 
-            onClick={onOpenSettings} 
-            className="sidebar-settings-icon-btn"
-            style={styles.settingsIconBtn}
-            title="Open LLM & System Settings"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
+        )}
+      </aside>
+    </>
   );
 }
-
-const styles = {
-  sidebar: {
-    width: '100%',
-    height: '100%',
-    background: 'var(--bg-sidebar)',
-    borderRight: '1px solid var(--border-light)',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '24px 16px',
-    borderRadius: '0',
-    flexShrink: 0
-  },
-  logoContainer: {
-    marginBottom: '28px',
-    paddingLeft: '8px'
-  },
-  uploadZone: {
-    border: '2px dashed',
-    borderRadius: '12px',
-    padding: '24px 12px',
-    textAlign: 'center',
-    cursor: 'pointer',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    marginBottom: '12px'
-  },
-  uploadInner: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  uploadText: {
-    fontFamily: 'var(--font-heading)',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#e2e8f0',
-    marginBottom: '4px'
-  },
-  uploadSubtext: {
-    fontSize: '11px',
-    color: 'var(--text-muted)'
-  },
-  // URL Section styles
-  urlSection: {
-    marginBottom: '20px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  urlHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    paddingLeft: '2px'
-  },
-  urlLabel: {
-    fontFamily: 'var(--font-heading)',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#38bdf8',
-    letterSpacing: '0.3px'
-  },
-  urlInputRow: {
-    display: 'flex',
-    gap: '6px',
-    alignItems: 'center'
-  },
-  urlInput: {
-    flex: 1,
-    padding: '10px 12px',
-    borderRadius: '8px',
-    background: 'rgba(2, 3, 9, 0.5)',
-    border: '1px solid rgba(56, 189, 248, 0.15)',
-    color: '#ffffff',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '12px',
-    outline: 'none',
-    transition: 'border-color 0.2s, box-shadow 0.2s',
-    width: '100%',
-    minWidth: 0
-  },
-  urlFetchBtn: {
-    padding: '10px 12px',
-    borderRadius: '8px',
-    background: 'rgba(56, 189, 248, 0.12)',
-    border: '1px solid rgba(56, 189, 248, 0.25)',
-    color: '#38bdf8',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all 0.2s',
-    flexShrink: 0
-  },
-  urlSpinner: {
-    width: '14px',
-    height: '14px',
-    border: '2px solid rgba(56, 189, 248, 0.2)',
-    borderTopColor: '#38bdf8',
-    borderRadius: '50%'
-  },
-  urlFetchingText: {
-    fontSize: '10px',
-    color: '#38bdf8',
-    fontStyle: 'italic',
-    paddingLeft: '2px',
-    margin: 0
-  },
-  // Documents section
-  docsSection: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-    marginBottom: '16px'
-  },
-  sectionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-    paddingHorizontal: '8px'
-  },
-  sectionTitle: {
-    fontFamily: 'var(--font-heading)',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#e2e8f0',
-    letterSpacing: '0.5px'
-  },
-  badge: {
-    fontSize: '10px',
-    fontWeight: '700',
-    color: 'var(--color-secondary)',
-    background: 'rgba(0, 245, 212, 0.08)',
-    border: '1px solid rgba(0, 245, 212, 0.15)',
-    padding: '2px 8px',
-    borderRadius: '20px'
-  },
-  docList: {
-    flex: 1,
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    paddingRight: '4px'
-  },
-  emptyState: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    border: '1px solid rgba(255,255,255,0.03)',
-    borderRadius: '12px',
-    background: 'rgba(255,255,255,0.01)',
-    padding: '24px 0'
-  },
-  docCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    background: 'rgba(255, 255, 255, 0.02)',
-    border: '1px solid rgba(255, 255, 255, 0.04)',
-    borderRadius: '8px',
-    padding: '10px 12px',
-    transition: 'all 0.2s'
-  },
-  deleteDocBtn: {
-    background: 'transparent',
-    border: 'none',
-    color: '#94a3b8',
-    cursor: 'pointer',
-    padding: '6px',
-    borderRadius: '6px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all 0.2s',
-    opacity: 0,
-    flexShrink: 0
-  },
-  docIcon: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  docInfo: {
-    flex: 1,
-    overflow: 'hidden'
-  },
-  docName: {
-    fontSize: '12px',
-    fontWeight: '500',
-    color: '#e2e8f0',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis'
-  },
-  docStatusRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    marginTop: '2px'
-  },
-  statusDot: {
-    width: '6px',
-    height: '6px',
-    borderRadius: '50%',
-    background: 'var(--color-secondary)',
-    boxShadow: '0 0 6px var(--color-secondary)'
-  },
-  statusText: {
-    fontSize: '9px',
-    color: 'var(--text-muted)'
-  },
-  // Groq Banner
-  groqBannerCompact: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    background: 'rgba(34, 197, 94, 0.04)',
-    border: '1px solid rgba(34, 197, 94, 0.15)',
-    borderRadius: '10px',
-    padding: '8px 12px',
-    minWidth: 0
-  },
-  groqBannerInner: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    width: '100%',
-    minWidth: 0
-  },
-  groqBadgeRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    width: '100%'
-  },
-  groqBannerTitleCompact: {
-    fontFamily: 'var(--font-heading)',
-    fontSize: '11px',
-    fontWeight: '700',
-    color: '#e2e8f0',
-    letterSpacing: '0.3px',
-    whiteSpace: 'nowrap'
-  },
-  freeBadgeCompact: {
-    fontSize: '8px',
-    fontWeight: '800',
-    color: '#22c55e',
-    background: 'rgba(34, 197, 94, 0.15)',
-    border: '1px solid rgba(34, 197, 94, 0.3)',
-    padding: '1px 5px',
-    borderRadius: '3px',
-    letterSpacing: '0.5px',
-    textTransform: 'uppercase',
-    boxShadow: '0 0 6px rgba(34, 197, 94, 0.15)',
-    marginLeft: 'auto'
-  },
-  groqBannerSubCompact: {
-    fontSize: '9px',
-    color: '#4ade80',
-    opacity: 0.8,
-    marginTop: '0px',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis'
-  },
-  // Bottom section
-  bottomSection: {
-    borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-    paddingTop: '16px',
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  controlsRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    width: '100%'
-  },
-  settingsIconBtn: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '10px',
-    background: 'rgba(255, 255, 255, 0.03)',
-    border: '1px solid rgba(255, 255, 255, 0.06)',
-    color: '#cbd5e1',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all 0.2s',
-    flexShrink: 0
-  },
-  spinner: {
-    width: '24px',
-    height: '24px',
-    border: '2px solid rgba(0, 245, 212, 0.15)',
-    borderTopColor: 'var(--color-secondary)',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-    marginBottom: '8px'
-  },
-  uploadButtonsRow: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '16px',
-    width: '100%'
-  },
-  uploadSubBtn: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '10px 8px',
-    borderRadius: '8px',
-    background: 'rgba(157, 78, 221, 0.06)',
-    border: '1px solid rgba(157, 78, 221, 0.2)',
-    color: '#c084fc',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '12px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.25s ease'
-  },
-  cameraSubBtn: {
-    flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '10px 8px',
-    borderRadius: '8px',
-    background: 'rgba(0, 245, 212, 0.06)',
-    border: '1px solid rgba(0, 245, 212, 0.2)',
-    color: 'var(--color-secondary)',
-    fontFamily: 'var(--font-sans)',
-    fontSize: '12px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.25s ease'
-  }
-};

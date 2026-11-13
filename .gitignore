@@ -55,3 +55,12 @@ Thumbs.db
 memory.md
 scratch/
 INTERVIEW_TECHNICAL_REPORT.md
+
+# Server runtime data
+backend/data/
+data/
+.dev_secret_key
+*.db
+*.sqlite3
+.env.*
+!.env.example

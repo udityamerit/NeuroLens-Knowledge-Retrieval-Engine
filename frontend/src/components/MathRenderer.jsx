@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useState } from 'react';
 import katex from 'katex';
 
@@ -204,7 +205,7 @@ export function renderInlineMarkdown(inlineText) {
   // 4: Code `...`
   // 5: Source tag [Source X]
   // 6: Markdown link [label](url)
-  const inlineRegex = /(\$(?!\s)(?:[^\$\n]+?)(?<!\s)\$|\\\([\s\S]*?\\\)|(?:\*\*.*?\*\*)|(?:\*.*?\*)|(?:`.*?`)|(?:\[Source \d+\])|(?:\[[^\]]+\]\([^)]+\)))/g;
+  const inlineRegex = /(\$(?!\s)(?:[^$\n]+?)(?<!\s)\$|\\\([\s\S]*?\\\)|(?:\*\*.*?\*\*)|(?:\*.*?\*)|(?:`.*?`)|(?:\[Source \d+\])|(?:\[[^\]]+\]\([^)]+\)))/g;
 
   const parts = inlineText.split(inlineRegex);
 
@@ -290,7 +291,11 @@ export function renderInlineMarkdown(inlineText) {
     if (part.startsWith('[') && part.includes('](')) {
       const closingBracketIdx = part.indexOf('](');
       const label = part.substring(1, closingBracketIdx);
-      const url = part.substring(closingBracketIdx + 2, part.length - 1);
+      const url = part.substring(closingBracketIdx + 2, part.length - 1).trim();
+      // Model output is untrusted: only allow plain http(s) links (blocks javascript:, data:, etc.).
+      if (!/^https?:\/\//i.test(url)) {
+        return label;
+      }
       return (
         <a
           key={`link-${idx}`}
