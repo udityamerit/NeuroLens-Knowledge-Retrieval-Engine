@@ -41,6 +41,7 @@ backend/uploads/*
 backend/faiss_index/
 
 # IDEs & System files
+.claude/
 .idea/
 .vscode/
 *.suo
@@ -54,7 +55,9 @@ Thumbs.db
 # Project Context & Memory
 memory.md
 scratch/
-INTERVIEW_TECHNICAL_REPORT.md
+*interview*
+*Interview*
+*INTERVIEW*
 
 # Server runtime data
 backend/data/
