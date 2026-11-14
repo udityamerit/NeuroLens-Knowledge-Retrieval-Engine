@@ -46,6 +46,22 @@ def test_unrelated_question_returns_no_sources(make_user, llm_calls):
     assert "none were relevant" in llm_calls[-1]["messages"][0]["content"]
 
 
+def test_vague_request_gets_document_overview(make_user, llm_calls):
+    u = make_user("a@example.com")
+    _upload(u, "recipes.txt", DOC_RECIPES.encode())
+    r = _chat(u, "tell me")
+    assert r.status_code == 200
+    assert "Retrieved passages:" in llm_calls[-1]["messages"][0]["content"]
+    assert "none were relevant" not in llm_calls[-1]["messages"][0]["content"]
+
+
+def test_plural_and_singular_words_match(make_user, llm_calls):
+    u = make_user("a@example.com")
+    _upload(u, "recipes.txt", b"The sourdough loaf is a feature of this bakery. Bake it at 180 degrees.")
+    r = _chat(u, "what features does the bakery have")
+    assert [s["document"] for s in r.json()["sources"]][:1] == ["recipes.txt"]
+
+
 def test_related_question_still_finds_the_document(make_user, llm_calls):
     u = make_user("a@example.com")
     _upload(u, "recipes.txt", DOC_RECIPES.encode())

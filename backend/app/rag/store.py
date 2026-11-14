@@ -34,17 +34,33 @@ _STOP = frozenset("a an and are as at be by for from has have in is it its of on
 _QUERY_STOP = _STOP | frozenset(
     "i me my mine we us our you your yours he she they them their who whom whose what which when where why how "
     "do does did done can could would should shall may might must am been being get got give tell show say said "
-    "please about any some there here also just very so if then than but not no yes me".split()
+    "please about any some there here also just very so if then than but not no yes me use used using uses".split()
 )
 MAX_CACHED_ORGS = 32
 
 
+def _stem(t: str) -> str:
+    """Very light suffix stripping so "features"/"feature" and "deploying"/"deploy" match lexically."""
+    n = len(t)
+    if n > 4 and t.endswith("ies"):
+        return t[:-3] + "y"
+    if n > 4 and t.endswith("es") and t[-3] in "sxz":
+        return t[:-2]
+    if n > 3 and t.endswith("s") and not t.endswith("ss"):
+        return t[:-1]
+    if n > 6 and t.endswith("ing"):
+        return t[:-3]
+    if n > 5 and t.endswith("ed"):
+        return t[:-2]
+    return t
+
+
 def tokenize(text: str) -> list[str]:
-    return [t for t in _TOKEN.findall(text.lower()) if t not in _STOP and len(t) > 1]
+    return [_stem(t) for t in _TOKEN.findall(text.lower()) if t not in _STOP and len(t) > 1]
 
 
 def query_terms(text: str) -> list[str]:
-    return [t for t in _TOKEN.findall(text.lower()) if t not in _QUERY_STOP and len(t) > 1]
+    return [_stem(t) for t in _TOKEN.findall(text.lower()) if t not in _QUERY_STOP and len(t) > 1]
 
 
 @dataclass
@@ -277,6 +293,8 @@ def clear_org(db: Session, org_id: str) -> int:
 # --------------------------------------------------------------- retrieval
 RRF_K = 60
 LEXICAL_RESCUE = 0.5  # share of the question's content words a chunk must contain to count as relevant without vector support
+HASH_MIN_SCORE = 0.30  # hash cosine scores are small and noisy; only a clearly strong one counts, otherwise word overlap decides
+HASH_LEXICAL_RESCUE = 0.34
 
 
 def search(
@@ -311,7 +329,12 @@ def search(
 
     # Relevance gate: ranking alone always yields *something*; keep only passages that are actually about the
     # question - semantically close enough, or sharing most of its content words. Nothing relevant -> no hits.
-    min_score = get_settings().retrieval_min_score if min_score is None else min_score
+    # Hash embeddings are purely lexical, so their cosine scores are low even for on-topic chunks; the MiniLM-tuned
+    # thresholds would discard nearly everything. Use lexical thresholds for them instead.
+    lexical_only = get_embedder().name.startswith("hash")
+    if min_score is None:
+        min_score = HASH_MIN_SCORE if lexical_only else get_settings().retrieval_min_score
+    rescue = HASH_LEXICAL_RESCUE if lexical_only else LEXICAL_RESCUE
     cover = idx.coverage(query)
     kept: list[int] = []
     for i in ranked:
@@ -319,7 +342,7 @@ def search(
         if sim is None:
             sim = idx.similarity(qvec, i)
             dense_score[i] = sim
-        if sim >= min_score or cover.get(i, 0.0) >= LEXICAL_RESCUE:
+        if sim >= min_score or cover.get(i, 0.0) >= rescue:
             kept.append(i)
     ranked = kept
     if not ranked:
@@ -346,6 +369,22 @@ def search(
         cid, did, dname, page, content, susp = idx.rows[i]
         hits.append(Hit(cid, did, dname, page, content, susp, float(dense_score.get(i, 0.0))))
     return hits
+
+
+def overview(db: Session, org_id: str, *, k: int = 5, document_ids: Optional[list[str]] = None) -> list[Hit]:
+    """The opening passages of each document (round-robin), for broad requests like "summarize" or "tell me"."""
+    idx = get_index(db, org_id)
+    wanted = set(document_ids) if document_ids is not None else None
+    by_doc: "OrderedDict[str, list[int]]" = OrderedDict()
+    for i, r in enumerate(idx.rows):  # rows are ordered by chunk id, i.e. document order within each document
+        if wanted is None or r[1] in wanted:
+            by_doc.setdefault(r[1], []).append(i)
+    picked: list[int] = []
+    while len(picked) < k and any(by_doc.values()):
+        for lst in by_doc.values():
+            if lst and len(picked) < k:
+                picked.append(lst.pop(0))
+    return [Hit(idx.rows[i][0], idx.rows[i][1], idx.rows[i][2], idx.rows[i][3], idx.rows[i][4], idx.rows[i][5], 0.0) for i in picked]
 
 
 def usage_stats(db: Session, org_id: str) -> tuple[int, int, int]:

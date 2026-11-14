@@ -62,6 +62,20 @@ _NO_ANSWER = re.compile(
 )
 
 
+_OVERVIEW_RE = re.compile(
+    r"\b(summar\w*|overview|outline|gist|tl;?dr)\b"
+    r"|\b(tell me|explain|describe|go on|continue)(\s+(more|it|this|that|everything|all))?\W*$"
+    r"|\bwhat(?:'s| is)?\s+(?:this|it|the (?:document|file|page))\b"
+    r"|\babout (?:this|it|the (?:document|file|page))\b",
+    re.I,
+)
+
+
+def _is_overview(query: str) -> bool:
+    """Broad requests ("tell me", "summarize this") have no topic words to match, so they get the documents' opening passages."""
+    return not store.query_terms(query) or bool(_OVERVIEW_RE.search(query))
+
+
 def _describe(d: dict) -> str:
     bits = [d["kind"].upper()]
     if d.get("pages"):
@@ -78,9 +92,15 @@ def removed_documents(db: Session, org_id: str, current: set[str], days: int = 3
         .order_by(AuditLog.id.desc())
         .limit(40)
     )
+    cur = [c.lower() for c in current]
+
+    def overlaps(n: str) -> bool:  # a re-added page/file often comes back under a slightly different name
+        n = n.lower()
+        return any(n == c or (min(len(n), len(c)) >= 8 and (n in c or c in n)) for c in cur)
+
     seen: list[str] = []
     for name in rows:
-        if name and name not in current and name not in seen:
+        if name and name not in current and name not in seen and not overlaps(name):
             seen.append(name)
     return seen
 
@@ -214,7 +234,10 @@ def answer(db: Session, org: Organization, body: ChatIn, resolved: llm.Resolved)
     hits: list[store.Hit] = []
     if docs and not (g.is_identity_question(query) or g.is_library_question(query)):
         search_query = _rewrite_query(resolved, query, history)
-        hits = store.search(db, org.id, search_query, k=max(1, min(org.retrieval_k, 15)), document_ids=body.document_ids)
+        k = max(1, min(org.retrieval_k, 15))
+        hits = store.search(db, org.id, search_query, k=k, document_ids=body.document_ids)
+        if not hits and _is_overview(query):
+            hits = store.overview(db, org.id, k=k, document_ids=body.document_ids)
     passages = []
     for h in hits:
         text, _ = g.redact_secrets(h.content)
