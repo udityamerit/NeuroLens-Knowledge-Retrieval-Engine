@@ -1,0 +1,13 @@
+.venv
+venv
+tests
+data
+uploads
+__pycache__
+*.pyc
+.env
+.env.*
+.pytest_cache
+Dockerfile
+requirements-dev.txt
+requirements-ml.txt

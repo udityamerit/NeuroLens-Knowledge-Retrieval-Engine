@@ -1,6 +1,7 @@
 """SQLAlchemy engine/session management (SQLite by default, Postgres via DATABASE_URL)."""
 from __future__ import annotations
 
+import threading
 from typing import Iterator
 
 from sqlalchemy import create_engine, event
@@ -26,6 +27,11 @@ def _make_engine(url: str) -> Engine:
             from sqlalchemy.pool import StaticPool
 
             kwargs["poolclass"] = StaticPool
+    else:
+        # Hosted Postgres (Neon, Supabase...) sits behind a connection pooler in transaction mode, which cannot
+        # keep server-side prepared statements, and drops idle connections; keep the local pool small and fresh.
+        kwargs["connect_args"] = {"prepare_threshold": None}
+        kwargs.update(pool_size=3, max_overflow=2, pool_recycle=240)
     eng = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
 
@@ -41,7 +47,8 @@ def _make_engine(url: str) -> Engine:
 
 
 def init_engine(url: str | None = None) -> Engine:
-    global _engine, _SessionLocal
+    global _engine, _SessionLocal, _schema_ready
+    _schema_ready = False
     if _engine is not None:
         _engine.dispose()
     _engine = _make_engine(url or get_settings().effective_database_url)
@@ -60,6 +67,26 @@ def create_all() -> None:
     from . import models  # noqa: F401  (register tables)
 
     Base.metadata.create_all(get_engine())
+
+
+_schema_lock = threading.Lock()
+_schema_ready = False
+
+
+def ensure_schema() -> None:
+    """Create tables once per process. Safe to call on every request (a flag check after the first time).
+
+    Serverless hosts may not run the ASGI lifespan, so the first request makes sure the schema exists.
+    """
+    global _schema_ready
+    if _schema_ready:
+        return
+    with _schema_lock:
+        if not _schema_ready:
+            create_all()
+            _schema_ready = True
+
+
 
 
 def get_db() -> Iterator[Session]:

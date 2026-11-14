@@ -1,0 +1,4 @@
+# Optional: local semantic embeddings (pulls in torch, ~1 GB). Used by the Docker image and local development.
+# Serverless hosts such as Vercel skip this file and run with EMBEDDING_BACKEND=hash.
+-r requirements.txt
+sentence-transformers==6.3.0

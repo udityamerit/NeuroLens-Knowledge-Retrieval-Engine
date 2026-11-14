@@ -9,13 +9,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
-from .db import create_all, get_engine, init_engine
+from .db import ensure_schema, get_engine, init_engine
 from .rag.embeddings import embedder_status, warm_up_async
 from .routers import auth, chat, documents, orgs, sso
 
@@ -38,7 +39,7 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         init_engine()
-        create_all()
+        ensure_schema()
         warm_up_async()  # no-op for the hash backend (tests)
         yield
 
@@ -62,6 +63,8 @@ def create_app() -> FastAPI:
             resp = JSONResponse({"detail": "Request body too large"}, status_code=413)
         else:
             try:
+                if request.url.path.startswith("/api/"):
+                    await run_in_threadpool(ensure_schema)  # no-op after the first request; covers hosts without lifespan
                 resp = await call_next(request)
             except Exception:
                 log.exception("unhandled error rid=%s %s %s", rid, request.method, request.url.path)
