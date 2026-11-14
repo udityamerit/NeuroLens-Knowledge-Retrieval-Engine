@@ -74,8 +74,17 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
 
     # --- RAG -------------------------------------------------------------
-    embedding_backend: str = Field("sentence-transformers", alias="EMBEDDING_BACKEND")  # or "hash"
+    embedding_backend: str = Field("sentence-transformers", alias="EMBEDDING_BACKEND")  # sentence-transformers | remote | hash
     embedding_model: str = Field("sentence-transformers/all-MiniLM-L6-v2", alias="EMBEDDING_MODEL")
+    # "remote" = any OpenAI-compatible /embeddings endpoint (default: Google Gemini, which has a free tier). Lets
+    # serverless hosts that cannot run a local model still get semantic search.
+    embedding_api_url: Optional[str] = Field(None, alias="EMBEDDING_API_URL")
+    embedding_api_key: Optional[str] = Field(None, alias="EMBEDDING_API_KEY")
+    embedding_dimensions: Optional[int] = Field(None, alias="EMBEDDING_DIMENSIONS")
+    # Cosine floor for remote embeddings (their score scale differs from MiniLM's) and how far below the best
+    # passage a passage may fall and still be kept.
+    retrieval_min_score_remote: float = Field(0.5, alias="RETRIEVAL_MIN_SCORE_REMOTE")
+    retrieval_score_margin_remote: float = Field(0.15, alias="RETRIEVAL_SCORE_MARGIN_REMOTE")
     chunk_size: int = 800
     chunk_overlap: int = 150
     # A passage is used (and shown as a source) only if its cosine similarity to the question reaches this value,

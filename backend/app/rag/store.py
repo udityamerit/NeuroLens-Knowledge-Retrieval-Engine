@@ -331,18 +331,27 @@ def search(
     # question - semantically close enough, or sharing most of its content words. Nothing relevant -> no hits.
     # Hash embeddings are purely lexical, so their cosine scores are low even for on-topic chunks; the MiniLM-tuned
     # thresholds would discard nearly everything. Use lexical thresholds for them instead.
-    lexical_only = get_embedder().name.startswith("hash")
+    ename = get_embedder().name
+    lexical_only = ename.startswith("hash")
+    remote = ename.startswith("remote:")
+    cfg = get_settings()
     if min_score is None:
-        min_score = HASH_MIN_SCORE if lexical_only else get_settings().retrieval_min_score
+        min_score = HASH_MIN_SCORE if lexical_only else cfg.retrieval_min_score_remote if remote else cfg.retrieval_min_score
     rescue = HASH_LEXICAL_RESCUE if lexical_only else LEXICAL_RESCUE
     cover = idx.coverage(query)
+    sims: dict[int, float] = {}
+    for i in ranked:
+        s = dense_score.get(i)
+        if s is None:
+            s = idx.similarity(qvec, i)
+            dense_score[i] = s
+        sims[i] = s
+    # Remote embeddings are tightly clustered, so also drop passages far below the best match.
+    floor = (max(sims.values()) - cfg.retrieval_score_margin_remote) if (remote and sims) else None
     kept: list[int] = []
     for i in ranked:
-        sim = dense_score.get(i)
-        if sim is None:
-            sim = idx.similarity(qvec, i)
-            dense_score[i] = sim
-        if sim >= min_score or cover.get(i, 0.0) >= rescue:
+        sim = sims[i]
+        if (sim >= min_score and (floor is None or sim >= floor)) or cover.get(i, 0.0) >= rescue:
             kept.append(i)
     ranked = kept
     if not ranked:

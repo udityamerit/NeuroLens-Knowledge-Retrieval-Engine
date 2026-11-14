@@ -590,7 +590,10 @@ Everything is an environment variable; see [`.env.example`](.env.example). The i
 | `FRONTEND_URL`, `PUBLIC_BASE_URL`, `CORS_ORIGINS`, `TRUSTED_HOSTS` | localhost | Set to your real URLs in production |
 | `GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | — | Platform-wide LLM keys (optional; organisations can bring their own) |
 | `ALLOW_PLATFORM_KEYS` | `true` | Let organisations without their own key use the platform keys |
-| `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` | `sentence-transformers` / MiniLM | `hash` selects the lightweight fallback (tests) |
+| `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` | `sentence-transformers` / MiniLM | `hash` selects the lightweight fallback (tests, serverless without a key); `remote` calls a hosted embeddings API |
+| `EMBEDDING_API_KEY` / `EMBEDDING_API_URL` | — / Google Gemini (OpenAI-compatible) | With `EMBEDDING_BACKEND=remote`. Any OpenAI-compatible `/embeddings` endpoint works (Gemini, Jina, Mistral, OpenAI). Falls back to `hash` if no key is set. Changing the embedder re-embeds existing documents automatically on the next search |
+| `EMBEDDING_DIMENSIONS` | `768` for Gemini | Vector size requested from the remote service (smaller = less database storage) |
+| `RETRIEVAL_MIN_SCORE_REMOTE` / `RETRIEVAL_SCORE_MARGIN_REMOTE` | `0.5` / `0.15` | Relevance floor and allowed gap below the best passage for remote embeddings (their score scale differs from MiniLM) |
 | `RETRIEVAL_MIN_SCORE` | `0.28` | Relevance threshold; raise for stricter answers, lower if too few passages are found |
 | `MAX_OCR_PAGES` | `15` | Scanned-PDF pages read per document |
 | `GUARDRAIL_MODE` | `block` | `block`, `flag` or `off` for input screening |

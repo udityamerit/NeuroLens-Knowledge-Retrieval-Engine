@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 import zlib
 from abc import ABC, abstractmethod
 
@@ -43,6 +44,79 @@ class HashEmbedder(Embedder):
         return out / norms
 
 
+GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI_DEFAULT_MODEL = "gemini-embedding-001"
+GEMINI_DEFAULT_DIM = 768  # 3072 by default; 768 keeps the database small with negligible quality loss
+
+
+class EmbeddingError(RuntimeError):
+    pass
+
+
+class RemoteEmbedder(Embedder):
+    """Embeddings from an OpenAI-compatible `/embeddings` endpoint (Gemini, Jina, Mistral, OpenAI ...)."""
+
+    BATCH = 64
+    RETRY_STATUS = {429, 500, 502, 503, 504}
+
+    def __init__(self, url: str, api_key: str, model: str, dimensions: int | None = None, transport=None, sleep=None) -> None:
+        import httpx
+
+        self._endpoint = url.rstrip("/") + "/embeddings"
+        self._key = api_key
+        self._model = model
+        self._dimensions = dimensions
+        self._sleep = sleep or time.sleep
+        self._client = httpx.Client(timeout=30.0, transport=transport)
+        self.name = f"remote:{model}" + (f"@{dimensions}" if dimensions else "")
+        self.dim = dimensions or 0
+        if not self.dim:
+            self.dim = int(self.embed(["dimension probe"]).shape[1])
+
+    def _post(self, batch: list[str]) -> list[list[float]]:
+        body: dict = {"model": self._model, "input": [t if t.strip() else " " for t in batch]}
+        if self._dimensions:
+            body["dimensions"] = self._dimensions
+        last = ""
+        for attempt in range(4):
+            try:
+                r = self._client.post(self._endpoint, json=body, headers={"Authorization": f"Bearer {self._key}"})
+            except Exception as e:  # network error / timeout
+                last = type(e).__name__
+            else:
+                if r.status_code == 200:
+                    data = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
+                    if len(data) != len(batch):
+                        raise EmbeddingError("Embedding service returned an unexpected number of vectors")
+                    return [d["embedding"] for d in data]
+                last = f"HTTP {r.status_code}"
+                if r.status_code not in self.RETRY_STATUS:
+                    raise EmbeddingError(f"Embedding service rejected the request ({last})")
+            self._sleep(min(2 ** attempt, 8))
+        raise EmbeddingError(f"Embedding service unavailable ({last})")
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        rows: list[list[float]] = []
+        for i in range(0, len(texts), self.BATCH):
+            rows += self._post(texts[i : i + self.BATCH])
+        out = np.asarray(rows, dtype=np.float32).reshape(len(texts), -1)
+        norms = np.linalg.norm(out, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        return out / norms
+
+
+def _build_remote(s) -> "Embedder | None":
+    if not s.embedding_api_key:
+        return None
+    url = s.embedding_api_url or GEMINI_OPENAI_URL
+    gemini = url == GEMINI_OPENAI_URL
+    model = s.embedding_model
+    if model.startswith("sentence-transformers/"):  # the local default is meaningless for a remote service
+        model = GEMINI_DEFAULT_MODEL
+    dims = s.embedding_dimensions or (GEMINI_DEFAULT_DIM if gemini else None)
+    return RemoteEmbedder(url, s.embedding_api_key, model, dims)
+
+
 class SentenceTransformerEmbedder(Embedder):
     def __init__(self, model_name: str) -> None:
         from sentence_transformers import SentenceTransformer
@@ -69,6 +143,11 @@ def get_embedder() -> Embedder:
             s = get_settings()
             if s.embedding_backend == "hash":
                 _embedder = HashEmbedder()
+            elif s.embedding_backend == "remote":
+                _embedder = _build_remote(s)
+                if _embedder is None:
+                    log.warning("EMBEDDING_BACKEND=remote but EMBEDDING_API_KEY is not set; using hash embeddings.")
+                    _embedder = HashEmbedder()
             else:
                 try:
                     _embedder = SentenceTransformerEmbedder(s.embedding_model)
@@ -96,7 +175,7 @@ def warm_up_async() -> None:
     or downloading the model, which can be tens of seconds. Server startup is not blocked.
     """
     global _warm_state
-    if _embedder is not None or _warm_state == "loading" or get_settings().embedding_backend == "hash":
+    if _embedder is not None or _warm_state == "loading" or get_settings().embedding_backend in ("hash", "remote"):
         return
     _warm_state = "loading"
 
